@@ -9,7 +9,7 @@ plugins {
     id("org.jetbrains.kotlinx.kover") version "0.8.3"
 }
 
-group = "com.github.eldaddor.plugin4fun"
+group = "com.github.edxref"
 version = "0.0.1"
 
 // Set the JVM language level used to build the project
@@ -27,13 +27,13 @@ intellij {
     version.set("2023.3.7")
     type.set("IC") // Target IDE Platform
 
-    plugins.set(listOf("com.intellij.java"))
+    plugins.set(listOf("com.intellij.java","org.jetbrains.kotlin"))
 }
 
 // Configure Gradle Changelog Plugin
 changelog {
     groups.empty()
-    repositoryUrl.set("https://github.com/EldadDor/Plugin4Fun")
+    repositoryUrl.set("https://github.com/EldadDor/EDXRef")
 }
 
 tasks {

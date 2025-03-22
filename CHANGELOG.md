@@ -1,6 +1,6 @@
 <!-- Keep a Changelog guide -> https://keepachangelog.com -->
 
-# Plugin4Fun Changelog
+# EDXRef Changelog
 
 ## [Unreleased]
 ### Added

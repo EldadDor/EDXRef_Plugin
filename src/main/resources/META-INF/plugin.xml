@@ -6,12 +6,22 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
+    <depends>org.jetbrains.kotlin</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
+        <localInspection
+                language="kotlin"
+                shortName="WSConsumerInspection"
+                displayName="WSConsumer Annotation Inspection"
+                groupName="Web Service Inspections"
+                groupPath="Web Services, WS Inspections"
+                enabledByDefault="true"
+                implementationClass="com.github.edxref.inspection.MyAnnotationInspection2"/>
         <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
     </extensions>
+
 
     <applicationListeners>
         <listener class="com.github.edxref.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
