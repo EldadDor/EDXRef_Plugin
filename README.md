@@ -1,4 +1,5 @@
-# Plugin4Fun
+# EDXRef Plugin - Create from Template.
+
 
 ![Build](https://github.com/EldadDor/Plugin4Fun/workflows/Build/badge.svg)
 [![Version](https://img.shields.io/jetbrains/plugin/v/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
