@@ -1,5 +1,6 @@
 package com.github.edxref.inspection
 
+import com.github.edxref.MyBundle
 import com.github.edxref.model.LbMsType
 import com.github.edxref.model.WSConsumer
 import com.github.edxref.model.WSMethods
@@ -30,7 +31,7 @@ class WSConsumerJavaInspectionKotlinTest : BasePlatformTestCase() {
     }
 
 
-    @Test
+   /* @Test
     fun testInvalidUrlAndPathWithMsConsumer2() {
         // Add expected highlighting information in the test code
         myFixture.configureByText("LbInValidUrlModel3.java", """
@@ -45,8 +46,58 @@ class WSConsumerJavaInspectionKotlinTest : BasePlatformTestCase() {
 
         myFixture.enableInspections(WSConsumerJavaInspection())
         myFixture.checkHighlighting(true, false, true)
+    }*/
+
+
+    @Test
+    fun testInvalidUrlAndPathWithMsConsumer2() {
+        // Configure the test file without embedded warnings
+        myFixture.configureByText("LbInValidUrlModel3.java", """
+    package com.github.edxref.test;
+    
+    import com.github.edxref.model.*;
+    
+    @WSConsumer(url = "http://msdevcrm", path = "clientpermissions/test/123", method = WSMethods.GET, timeout = 60000, msConsumer = @WSMsConsumer(LbMsType.CRM))
+    public interface LbInValidUrlModel3 extends WebserviceConsumer {
+    }
+    """.trimIndent())
+
+        myFixture.enableInspections(WSConsumerJavaInspection())
+
+        // Get the highlighting results
+        val highlights = myFixture.doHighlighting()
+
+        // Verify the expected warnings are present
+        val warnings = highlights.filter { it.severity.name == "WARNING" }
+
+        // Get the expected messages from MyBundle
+        val expectedUrlWithMsConsumer = MyBundle.message("plugin.rules.url.with.msconsumer")
+        val expectedInvalidServer = MyBundle.message("plugin.rules.invalid.server", "msdevcrm")
+
+        // Verify both warnings exist in the results
+        assertTrue("Should warn about URL with msConsumer",
+            warnings.any { it.description == expectedUrlWithMsConsumer })
+        assertTrue("Should warn about restricted server",
+            warnings.any { it.description == expectedInvalidServer })
     }
 
+
+    @Test
+    fun testInvalidUrlAndPathWithMsConsumer3() {
+        // Add expected highlighting information in the test code with updated message format
+        myFixture.configureByText("LbInValidUrlModel3.java", """
+    package com.github.edxref.test;
+    
+    import com.github.edxref.model.*;
+    
+    <warning descr="${MyBundle.message("plugin.rules.url.with.msconsumer")}"><warning descr="${MyBundle.message("plugin.rules.invalid.server", "msdevcrm")}">@WSConsumer(url = "http://msdevcrm", path = "clientpermissions/test/123", method = WSMethods.GET, timeout = 60000, msConsumer = @WSMsConsumer(LbMsType.CRM))</warning></warning>
+    public interface LbInValidUrlModel3 extends WebserviceConsumer {
+    }
+    """.trimIndent())
+
+        myFixture.enableInspections(WSConsumerJavaInspection())
+        myFixture.checkHighlighting(true, false, true)
+    }
 
 
     @Test

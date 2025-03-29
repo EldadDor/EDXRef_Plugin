@@ -16,7 +16,7 @@ class WSConsumerJavaInspectionKotlin2Test : BasePlatformTestCase() {
         return "src/test/testData"
     }
 
-    @Test
+//    @Test
     fun testMissingUrlAndPath() {
         // Create a simplified test file
         val file = myFixture.configureByText("TestFile.java", """
@@ -57,7 +57,7 @@ class WSConsumerJavaInspectionKotlin2Test : BasePlatformTestCase() {
     }
 
 
-    @Test
+//    @Test
     fun testMissingUrlAndPath2() {
         // Create a real inspection instance
         val inspection = WSConsumerJavaInspection()

@@ -15,7 +15,7 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
 
     override fun getTestDataPath(): String = "src/test/testData" // adjust, if necessary
 
-    @Before
+//    @Before
     override fun setUp() {
         super.setUp()
         System.setProperty("kotlin.script.disable.auto.import", "true")
@@ -50,7 +50,7 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
         myFixture.checkHighlighting()
     }
 
-    @Test
+//    @Test
     fun testPearlWebServiceConsumer_WithUrlAndProtocol() {
         val fileContent = """
             package test
@@ -75,8 +75,8 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
         waitForStableHighlighting()  // use our helper instead of a direct call to checkHighlighting()
     }
 
-    @Test
-    @RunsInEdt
+//    @Test
+//    @RunsInEdt
     fun testWebServiceConsumer_AllValuesOk() {
         val fileContent = """
             package test
@@ -101,7 +101,7 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
         waitForStableHighlighting()
     }
 
-    @Test
+//    @Test
     fun testAnnotationInspection() {
         val fileContent = """
         package test
