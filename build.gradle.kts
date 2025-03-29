@@ -53,7 +53,7 @@ tasks {
 
     patchPluginXml {
         sinceBuild.set("233")
-        untilBuild.set("242.*")
+        untilBuild.set("243.*")
 
         // Extract the <!-- Plugin description --> section from README.md
         pluginDescription.set(
