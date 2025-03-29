@@ -187,9 +187,12 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
                     true
                 }
 
-                // Check for msConsumer
+                // Check for msConsumer - FIXED to check for non-empty array
                 val msConsumerAttr = annotation.findAttributeValue("msConsumer")
-                val hasMsConsumer = msConsumerAttr != null
+                val hasMsConsumer = msConsumerAttr != null &&
+                        !msConsumerAttr.text.equals("{}") &&
+                        !msConsumerAttr.text.equals("[]") &&
+                        msConsumerAttr.text.isNotEmpty()
                 val msConsumerValue = msConsumerAttr?.text ?: ""
 
                 // Use the common logic
@@ -273,12 +276,16 @@ class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspect
                 val sslText = getArgumentText("sslCertificateValidation")
                 val sslCertificateValidation = if (sslText.isEmpty()) true else sslText.toBoolean()
 
-                // Determine if the child annotation msConsumer is explicitly provided
+                // Determine if the child annotation msConsumer is explicitly provided - FIXED
                 val msConsumerArg = annotationEntry.valueArguments.find {
                     it.getArgumentName()?.asName?.asString() == "msConsumer"
                 }
 
-                val hasMsConsumer = msConsumerArg != null
+                // Only consider msConsumer present if it's non-empty
+                val hasMsConsumer = msConsumerArg != null &&
+                        msConsumerArg.getArgumentExpression()?.text?.let {
+                            it.isNotEmpty() && !it.equals("{}") && !it.equals("[]")
+                        } ?: false
                 val msConsumerValue = msConsumerArg?.getArgumentExpression()?.text ?: ""
 
                 // Use the common logic

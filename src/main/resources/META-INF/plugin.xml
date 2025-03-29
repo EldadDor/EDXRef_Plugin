@@ -4,6 +4,12 @@
     <name>edxref</name>
     <vendor>eldaddor</vendor>
 
+
+    <!-- Add version information -->
+    <version>1.0.0</version>
+
+    <!-- Add IDE compatibility information -->
+    <idea-version since-build="223.8836" until-build="243.*"/>
     <description><![CDATA[
         <p>This is an Inspection Suite plugin, that used for the WebServiceConsumer & PearlWebServiceConsumer</p>
         <h2>Key Features</h2>
