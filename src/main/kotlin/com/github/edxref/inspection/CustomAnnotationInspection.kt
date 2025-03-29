@@ -8,7 +8,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.codeStyle.JavaCodeStyleManager
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
-import org.jetbrains.kotlin.idea.gradleTooling.get
 import org.jetbrains.kotlin.psi.KtAnnotationEntry
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtPsiFactory
@@ -17,7 +16,7 @@ import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 
 // Helper function for conditional logging
 private fun logIfEnabled(logger: Logger, message: String) {
-    val enableLogging = MyBundle["enable.log"] as Boolean
+    val enableLogging = MyBundle.message("enable.log", "false").toBoolean()
     if (enableLogging) {
         logger.info(message)
     }
