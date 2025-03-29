@@ -5,13 +5,14 @@ import com.intellij.codeInspection.*
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
-import com.intellij.platform.ide.bootstrap.logEssentialInfoAboutIde
 import com.intellij.psi.*
 import com.intellij.psi.codeStyle.JavaCodeStyleManager
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
-import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.KtAnnotationEntry
+import org.jetbrains.kotlin.psi.KtClass
+import org.jetbrains.kotlin.psi.KtPsiFactory
+import org.jetbrains.kotlin.psi.KtVisitorVoid
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
-
 
 class AddDefaultUrlQuickFix(private val isJava: Boolean) : LocalQuickFix {
     override fun getName(): String = "Add default URL attribute"
@@ -40,7 +41,10 @@ class AddDefaultUrlQuickFix(private val isJava: Boolean) : LocalQuickFix {
             }
         } else if (!isJava && annotationElement is KtAnnotationEntry) {
             // Kotlin implementation
-            val hasMethodAttribute = annotationElement.valueArguments.any {
+            val ktAnnotationEntry = annotationElement // Cast to correct type for clarity
+
+            // Check if method attribute already exists
+            val hasMethodAttribute = ktAnnotationEntry.valueArguments.any {
                 it.getArgumentName()?.asName?.asString() == "method"
             }
 
@@ -50,8 +54,8 @@ class AddDefaultUrlQuickFix(private val isJava: Boolean) : LocalQuickFix {
             val urlAttributeText = "url = \"http://localhost:8080/service\""
 
             // If there are existing arguments
-            if (annotationElement.valueArgumentList != null) {
-                val argList = annotationElement.valueArgumentList!!
+            if (ktAnnotationEntry.valueArgumentList != null) {
+                val argList = ktAnnotationEntry.valueArgumentList!!
 
                 // Insert url attribute at the beginning
                 val newArgument = psiFactory.createArgument(urlAttributeText)
@@ -67,12 +71,18 @@ class AddDefaultUrlQuickFix(private val isJava: Boolean) : LocalQuickFix {
                     argList.addArgument(methodArgument)
                 }
             } else {
-                // Create a new argument list
+                // Create a new argument list using pattern-based creation
                 val methodText = if (hasMethodAttribute) "" else ", method = WSMethods.GET"
-                val argumentListText = "($urlAttributeText$methodText)"
-                val newArgumentList = psiFactory.createValueArgumentListByPattern(argumentListText)
-                annotationElement.valueArgumentList?.replace(newArgumentList)
-                    ?: annotationElement.add(newArgumentList)
+                val patternText = "@Annotation($urlAttributeText$methodText)"
+
+                // Create the entire annotation with arguments using a pattern
+                val dummyAnnotation = psiFactory.createAnnotationEntry(patternText)
+
+                // Extract the value argument list and replace it in the original annotation
+                val newArgumentList = dummyAnnotation.valueArgumentList
+                if (newArgumentList != null) {
+                    ktAnnotationEntry.add(newArgumentList)
+                }
             }
         }
     }
@@ -91,7 +101,8 @@ interface WSConsumerInspectionLogic {
         sslCertificateValidation: Boolean,
         hasMsConsumer: Boolean,
         msConsumerValue: String,
-        isPearlWebserviceConsumer: Boolean
+        isPearlWebserviceConsumer: Boolean,
+        isJava: Boolean
     )
     {
         // Base check: Ensure url or path is specified
@@ -99,7 +110,9 @@ interface WSConsumerInspectionLogic {
             log.info("plugin.rules.missing.url.and.path")
             holder.registerProblem(
                 annotationElement,
-                MyBundle.message("plugin.rules.missing.url.and.path", "Either 'url' or 'path' must be specified in @WSConsumer annotation.")
+                MyBundle.message("plugin.rules.missing.url.and.path", "Either 'url' or 'path' must be specified in @WSConsumer annotation."),
+                ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+                AddDefaultUrlQuickFix(isJava)
             )
             return
         }
@@ -272,7 +285,8 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
                     sslCertificateValidation,
                     hasMsConsumer,
                     msConsumerValue,
-                    isPearlWebserviceConsumer
+                    isPearlWebserviceConsumer,
+                    true
                 )
             }
 
@@ -365,7 +379,8 @@ class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspect
                     sslCertificateValidation,
                     hasMsConsumer,
                     msConsumerValue,
-                    isPearlWebserviceConsumer
+                    isPearlWebserviceConsumer,
+                    false
                 )
             }
         }
