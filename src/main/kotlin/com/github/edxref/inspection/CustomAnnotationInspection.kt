@@ -4,13 +4,80 @@ import com.github.edxref.MyBundle
 import com.intellij.codeInspection.*
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.project.Project
 import com.intellij.platform.ide.bootstrap.logEssentialInfoAboutIde
 import com.intellij.psi.*
+import com.intellij.psi.codeStyle.JavaCodeStyleManager
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
-import org.jetbrains.kotlin.psi.KtAnnotationEntry
-import org.jetbrains.kotlin.psi.KtClass
-import org.jetbrains.kotlin.psi.KtVisitorVoid
+import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
+
+
+class AddDefaultUrlQuickFix(private val isJava: Boolean) : LocalQuickFix {
+    override fun getName(): String = "Add default URL attribute"
+    override fun getFamilyName(): String = name
+
+    override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
+        val annotationElement = descriptor.psiElement
+        if (isJava && annotationElement is PsiAnnotation) {
+            // Java implementation
+            val factory = JavaPsiFacade.getElementFactory(project)
+            val attr = factory.createAnnotationFromText("@WSConsumer(url = \"http://localhost:8080/service\", method = WSMethods.GET)", null)
+            val urlAttribute = attr.findAttributeValue("url")
+
+            // Add URL attribute to the annotation
+            if (urlAttribute != null) {
+                annotationElement.setDeclaredAttributeValue("url", urlAttribute)
+
+                // Add method attribute if it doesn't exist
+                if (annotationElement.findAttributeValue("method") == null) {
+                    val methodAttribute = attr.findAttributeValue("method")
+                    annotationElement.setDeclaredAttributeValue("method", methodAttribute)
+                }
+
+                // Optimize imports and reformat code
+                JavaCodeStyleManager.getInstance(project).shortenClassReferences(annotationElement)
+            }
+        } else if (!isJava && annotationElement is KtAnnotationEntry) {
+            // Kotlin implementation
+            val hasMethodAttribute = annotationElement.valueArguments.any {
+                it.getArgumentName()?.asName?.asString() == "method"
+            }
+
+            val psiFactory = KtPsiFactory(project)
+
+            // Create the attribute to add
+            val urlAttributeText = "url = \"http://localhost:8080/service\""
+
+            // If there are existing arguments
+            if (annotationElement.valueArgumentList != null) {
+                val argList = annotationElement.valueArgumentList!!
+
+                // Insert url attribute at the beginning
+                val newArgument = psiFactory.createArgument(urlAttributeText)
+                if (argList.arguments.isNotEmpty()) {
+                    argList.addArgumentBefore(newArgument, argList.arguments.first())
+                } else {
+                    argList.addArgument(newArgument)
+                }
+
+                // Add method attribute if it doesn't exist
+                if (!hasMethodAttribute) {
+                    val methodArgument = psiFactory.createArgument("method = WSMethods.GET")
+                    argList.addArgument(methodArgument)
+                }
+            } else {
+                // Create a new argument list
+                val methodText = if (hasMethodAttribute) "" else ", method = WSMethods.GET"
+                val argumentListText = "($urlAttributeText$methodText)"
+                val newArgumentList = psiFactory.createValueArgumentListByPattern(argumentListText)
+                annotationElement.valueArgumentList?.replace(newArgumentList)
+                    ?: annotationElement.add(newArgumentList)
+            }
+        }
+    }
+}
+
 
 interface WSConsumerInspectionLogic {
     private val log: Logger
@@ -136,7 +203,8 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
                             "Either 'url' or 'path' must be specified in @WSConsumer annotation.",
                             true,
                             ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
-                            isOnTheFly
+                            isOnTheFly,
+                            AddDefaultUrlQuickFix(true)
                         )
                     )
                 }
