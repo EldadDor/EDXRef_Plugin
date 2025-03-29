@@ -1,6 +1,10 @@
 package com.github.edxref.inspection
 
+import com.github.edxref.MyBundle
 import com.intellij.codeInspection.*
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.platform.ide.bootstrap.logEssentialInfoAboutIde
 import com.intellij.psi.*
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.KtAnnotationEntry
@@ -9,6 +13,9 @@ import org.jetbrains.kotlin.psi.KtVisitorVoid
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 
 interface WSConsumerInspectionLogic {
+    private val log: Logger
+        get() = logger<WSConsumerInspectionLogic>()
+
     fun checkWSConsumerAnnotation(
         annotationElement: PsiElement,
         holder: ProblemsHolder,
@@ -18,21 +25,24 @@ interface WSConsumerInspectionLogic {
         hasMsConsumer: Boolean,
         msConsumerValue: String,
         isPearlWebserviceConsumer: Boolean
-    ) {
-        // Base case check: Either URL or path must be specified
+    )
+    {
+        // Base check: Ensure url or path is specified
         if (urlValue.isEmpty() && pathValue.isEmpty()) {
+            log.info("plugin.rules.missing.url.and.path")
             holder.registerProblem(
                 annotationElement,
-                "Either 'url' or 'path' must be specified in @WSConsumer annotation."
+                MyBundle.message("plugin.rules.missing.url.and.path", "Either 'url' or 'path' must be specified in @WSConsumer annotation.")
             )
             return
         }
 
         // Rule 1: If msConsumer is present, url should not be specified (use path only)
         if (hasMsConsumer && urlValue.isNotEmpty()) {
+            log.info("plugin.rules.url.with.msconsumer")
             holder.registerProblem(
                 annotationElement,
-                "For @WSConsumer with msConsumer, 'url' must not be specified; use 'path' only."
+                MyBundle.message("plugin.rules.url.with.msconsumer", "For @WSConsumer with msConsumer, 'url' must not be specified; use 'path' only.")
             )
         }
 
@@ -40,7 +50,7 @@ interface WSConsumerInspectionLogic {
         if (pathValue.isNotEmpty() && (pathValue.contains("http://") || pathValue.contains("https://"))) {
             holder.registerProblem(
                 annotationElement,
-                "The 'path' attribute must not contain http/https; specify only a relative path."
+                MyBundle.message("plugin.rules.path.with.protocol", "The 'path' attribute must not contain http/https; specify only a relative path.")
             )
         }
 
@@ -50,7 +60,7 @@ interface WSConsumerInspectionLogic {
             if (protocolIndex > 0 && urlValue.substring(protocolIndex + 3).contains("//")) {
                 holder.registerProblem(
                     annotationElement,
-                    "The 'url' attribute contains invalid double slashes."
+                    MyBundle.message("plugin.rules.url.double.slashes", "The 'url' attribute contains invalid double slashes.")
                 )
             }
         }
@@ -59,18 +69,21 @@ interface WSConsumerInspectionLogic {
         if (pathValue.isNotEmpty() && urlValue.isEmpty() && !hasMsConsumer) {
             holder.registerProblem(
                 annotationElement,
-                "When only 'path' is specified, 'msConsumer' must be defined."
+                MyBundle.message("plugin.rules.path.without.msconsumer", "When only 'path' is specified, 'msConsumer' must be defined.")
             )
         }
 
         // Rule 5: Detect invalid URLs containing specific hosts
         if (urlValue.isNotEmpty()) {
-            val invalidHosts = listOf("msdevcz", "msdevcrm")
+            // Get the list of invalid hosts from the bundle property
+            val invalidHostsStr = MyBundle.message("plugin.rules.invalid.address")
+            val invalidHosts = invalidHostsStr.split(',').map { it.trim() }
+
             for (host in invalidHosts) {
                 if (urlValue.contains(host)) {
                     holder.registerProblem(
                         annotationElement,
-                        "Invalid URL: '$host' is in the list of restricted servers."
+                        MyBundle.message("plugin.rules.invalid.server", "Invalid URL: ''{0}'' is in the list of restricted servers.", host)
                     )
                     break
                 }
@@ -78,43 +91,40 @@ interface WSConsumerInspectionLogic {
         }
 
         // Rule 6: Further restrictions for PearlWebserviceConsumer
-        if (isPearlWebserviceConsumer) {
-            if (hasMsConsumer) {
-                // Rule 6.1: If a value is provided for msConsumer in PearlWebserviceConsumer, it must be LOCAL
-                val hasLocal = msConsumerValue.contains("LOCAL")
-                if (msConsumerValue.isNotEmpty() && !hasLocal) {
-                    holder.registerProblem(
-                        annotationElement,
-                        "When used in PearlWebserviceConsumer, msConsumer value may only be omitted or set to LOCAL."
-                    )
-                } else if (hasLocal && sslCertificateValidation) {
-                    // Rule 6.2: For LOCAL msConsumer in PearlWebserviceConsumer, sslCertificateValidation must be false
-                    holder.registerProblem(
-                        annotationElement,
-                        "For PearlWebserviceConsumer with msConsumer set to LOCAL, sslCertificateValidation must be false."
-                    )
-                }
-            }
-        } else {
-            // Rule 7: Disallow PEARL LbMsType for regular WebserviceConsumer
-            if (hasMsConsumer && msConsumerValue.contains("PEARL")) {
+        if (isPearlWebserviceConsumer && hasMsConsumer) {
+            // If a value is provided for msConsumer, it must be LOCAL
+            val hasLocal = msConsumerValue.contains("LOCAL")
+            if (msConsumerValue.isNotEmpty() && !hasLocal) {
                 holder.registerProblem(
                     annotationElement,
-                    "'PEARL' LbMsType is not allowed for WebserviceConsumer"
+                    MyBundle.message("plugin.rules.pearl.msconsumer.local", "When used in PearlWebserviceConsumer, msConsumer value may only be omitted or set to LOCAL.")
+                )
+            } else if (hasLocal && sslCertificateValidation) {
+                holder.registerProblem(
+                    annotationElement,
+                    MyBundle.message("plugin.rules.pearl.ssl.validation", "For PearlWebserviceConsumer with msConsumer set to LOCAL, sslCertificateValidation must be false.")
                 )
             }
+        } else if (!isPearlWebserviceConsumer && hasMsConsumer && msConsumerValue.contains("PEARL")) {
+            // Rule 7: Disallow PEARL LbMsType for regular WebserviceConsumer
+            holder.registerProblem(
+                annotationElement,
+                MyBundle.message("plugin.rules.non.pearl.consumer", "'PEARL' LbMsType is not allowed for WebserviceConsumer")
+            )
         }
     }
 }
 
 // Java implementation
 class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsumerInspectionLogic {
+    private val log = logger<WSConsumerJavaInspection>()
     override fun getDisplayName(): String = "WSConsumer annotation inspection (Java)"
 
     override fun checkClass(psiClass: PsiClass, manager: InspectionManager, isOnTheFly: Boolean): Array<ProblemDescriptor> {
         val annotations = psiClass.annotations
         for (annotation in annotations) {
             if (annotation.qualifiedName?.endsWith("WSConsumer") == true) {
+                log.info("Found WSConsumer annotation, checkClass")
                 // Get properties by name instead of by type
                 val urlValue = annotation.findAttributeValue("url")
                 val pathValue = annotation.findAttributeValue("path")
@@ -142,6 +152,7 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
     ): PsiElementVisitor {
         return object : JavaElementVisitor() {
             override fun visitAnnotation(annotation: PsiAnnotation) {
+                log.info("Found WSConsumer annotation, visit")
                 if (annotation.qualifiedName?.endsWith("WSConsumer") != true) {
                     return
                 }
@@ -196,10 +207,10 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
 
             private fun isPearlWebserviceConsumer(element: PsiModifierListOwner): Boolean {
                 if (element !is PsiClass) return false
-
                 // Check implemented interfaces
                 for (implemented in element.interfaces) {
                     if (implemented.qualifiedName?.endsWith("PearlWebserviceConsumer") == true) {
+                        log.info("Found PearlWebServiceConsumer class, implement")
                         return true
                     }
                 }
@@ -208,6 +219,7 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
                 var superClass = element.superClass
                 while (superClass != null) {
                     if (superClass.qualifiedName?.endsWith("PearlWebserviceConsumer") == true) {
+                        log.info("Found PearlWebServiceConsumer FQN class")
                         return true
                     }
                     superClass = superClass.superClass
