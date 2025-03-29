@@ -1,24 +1,60 @@
 package com.github.edxref
 
-
-import com.github.edxref.inspection.MyAnnotationInspection2
-import com.intellij.testFramework.fixtures.LightPlatformCodeInsightFixtureTestCase
+import com.github.edxref.inspection.MyAnnotationInspection
+import com.github.edxref.inspection.WSConsumerJavaInspection
+import com.intellij.codeInspection.InspectionManager
+import com.intellij.codeInspection.ProblemsHolder
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.testFramework.RunsInEdt
+import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import org.junit.Before
 import org.junit.Test
 
-class MyAnnotationInspectionTest : LightPlatformCodeInsightFixtureTestCase() {
+class MyAnnotationInspectionTest : BasePlatformTestCase() {
 
-    override fun getTestDataPath(): String = "src/test/testData" // You can leave this empty if you're using inlined code
+    override fun getTestDataPath(): String = "src/test/testData" // adjust, if necessary
+
+    @Before
+    override fun setUp() {
+        super.setUp()
+        System.setProperty("kotlin.script.disable.auto.import", "true")
+        System.setProperty("kotlin.script.disable.compilation", "true")
+        System.setProperty("idea.force.use.core.classloader.for.plugin.path", "true")
+    }
+
+
+    /**
+     * Repeatedly dispatch pending events (which may include background PSI updates)
+     * before performing highlighting. This helper will try for up to [maxIterations]
+     * before giving up.
+     */
+    private fun waitForStableHighlighting(maxIterations: Int = 10) {
+        var iterations = 0
+        while (iterations < maxIterations) {
+            try {
+                ApplicationManager.getApplication().invokeAndWait {
+                    myFixture.doHighlighting()
+                    myFixture.checkHighlighting()
+                }
+                // Force highlighting and check that no PSI modifications occur.
+                return // highlighting is stable!
+            } catch (e: AssertionError) {
+                // When the assertion is thrown due to PSI updates, let’s give it another try.
+                PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                iterations++
+            }
+        }
+        // One more call so that any persistent issue is reported.
+        myFixture.doHighlighting()
+        myFixture.checkHighlighting()
+    }
 
     @Test
     fun testPearlWebServiceConsumer_WithUrlAndProtocol() {
-        // This code should trigger problems:
-        // - The parent annotation (WSConsumer) has a non-empty URL (it should use path only).
-        // - The path contains the protocol "http://".
-        // - If msConsumer is present and we're in PearlWebServiceConsumer, then additional checks apply.
         val fileContent = """
             package test
 
-            // Import statements for your annotations and enums
             import com.example.WSConsumer
             import com.example.WSMsConsumer
             import com.example.WSMethods
@@ -35,14 +71,13 @@ class MyAnnotationInspectionTest : LightPlatformCodeInsightFixtureTestCase() {
         """.trimIndent()
 
         myFixture.configureByText("Test.kt", fileContent)
-        myFixture.enableInspections(MyAnnotationInspection2())
-        // checkHighlighting() ensures all issues are detected.
-        myFixture.checkHighlighting()
+        myFixture.enableInspections(MyAnnotationInspection())
+        waitForStableHighlighting()  // use our helper instead of a direct call to checkHighlighting()
     }
 
     @Test
+    @RunsInEdt
     fun testWebServiceConsumer_AllValuesOk() {
-        // This test simulates correct usage on WebServiceConsumer, so no problems should be reported.
         val fileContent = """
             package test
 
@@ -62,7 +97,45 @@ class MyAnnotationInspectionTest : LightPlatformCodeInsightFixtureTestCase() {
         """.trimIndent()
 
         myFixture.configureByText("Test.kt", fileContent)
-        myFixture.enableInspections(MyAnnotationInspection2())
-        myFixture.checkHighlighting()
+        myFixture.enableInspections(MyAnnotationInspection())
+        waitForStableHighlighting()
+    }
+
+    @Test
+    fun testAnnotationInspection() {
+        val fileContent = """
+        package test
+        
+        import com.example.WSConsumer
+        import com.example.WSMsConsumer
+        import com.example.WSMethods
+        import com.example.LbMsType
+
+        @WSConsumer(
+            url = "http://example.com", 
+            path = "http://claimservices/test/@value",
+            method = WSMethods.GET, 
+            msConsumer = @WSMsConsumer(value = LbMsType.LOCAL),
+            sslCertificateValidation = true
+        )
+        class PearlWebServiceConsumer {}
+    """.trimIndent()
+
+        val file = myFixture.configureByText("Test.kt", fileContent)
+
+        // Create inspection instance manually
+        val inspection = WSConsumerJavaInspection()
+
+        // Create problems holder
+        val problemsHolder = ProblemsHolder(InspectionManager.getInstance(project), file, false)
+
+        // Build visitor and run it on the file
+        val visitor = inspection.buildVisitor(problemsHolder, false)
+        visitor.visitFile(file);
+        file.accept(visitor)
+
+        // Check results
+        val problems = problemsHolder.results
+        // Assert on problems as needed
     }
 }

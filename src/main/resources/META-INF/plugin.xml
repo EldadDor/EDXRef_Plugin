@@ -4,6 +4,15 @@
     <name>edxref</name>
     <vendor>eldaddor</vendor>
 
+    <description><![CDATA[
+        <p>This is an Inspection Suite plugin, that used for the WebServiceConsumer & PearlWebServiceConsumer</p>
+        <h2>Key Features</h2>
+        <ul>
+            <li>Will show error on invalid usage of the @WSConsumer</li>
+        </ul>
+    ]]></description>
+
+
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
     <depends>org.jetbrains.kotlin</depends>
@@ -13,12 +22,20 @@
     <extensions defaultExtensionNs="com.intellij">
         <localInspection
                 language="kotlin"
-                shortName="WSConsumerInspection"
+                shortName="WSConsumerKotlinInspection"
                 displayName="WSConsumer Annotation Inspection"
                 groupName="Web Service Inspections"
                 groupPath="Web Services, WS Inspections"
                 enabledByDefault="true"
-                implementationClass="com.github.edxref.inspection.MyAnnotationInspection2"/>
+                implementationClass="com.github.edxref.inspection.WSConsumerKotlinInspection"/>
+        <localInspection
+                language="JAVA"
+                shortName="WSConsumerJavaInspection"
+                displayName="WSConsumer Annotation Inspection"
+                groupName="Web Service Inspections"
+                groupPath="Web Services, WS Inspections"
+                enabledByDefault="true"
+                implementationClass="com.github.edxref.inspection.WSConsumerJavaInspection"/>
         <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
     </extensions>
 

@@ -36,6 +36,12 @@ changelog {
     repositoryUrl.set("https://github.com/EldadDor/EDXRef")
 }
 
+dependencies {
+    testImplementation(kotlin("test"))
+    testImplementation("org.mockito:mockito-core:4.6.1")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:4.0.0") // For Kotlin-specific features
+}
+
 tasks {
     // Set the JVM compatibility versions
     compileKotlin {
@@ -92,6 +98,10 @@ tasks {
     }
 }
 
+tasks.test {
+    systemProperty("ide.allow.document.model.changes.in.highlighting", "true")
+    systemProperty("kotlin.script.disable.auto.import", "true")
+}
 // Configure Gradle Kover Plugin - read more: https://github.com/Kotlin/kotlinx-kover#configuration
 kover {
     reports {
