@@ -1,6 +1,7 @@
 package com.github.edxref.inspection
 
 import com.github.edxref.MyBundle
+import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 import com.intellij.codeInspection.*
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
@@ -15,9 +16,8 @@ import org.jetbrains.kotlin.psi.KtVisitorVoid
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 
 // Helper function for conditional logging
-private fun logIfEnabled(logger: Logger, message: String) {
-    val enableLogging = MyBundle.message("enable.log", "false").toBoolean()
-    if (enableLogging) {
+private fun logIfEnabled(project: Project, logger: Logger, message: String) {
+    if (project.getWSConsumerSettings().enableLog) {
         logger.info(message)
     }
 }
@@ -102,6 +102,7 @@ interface WSConsumerInspectionLogic {
         get() = logger<WSConsumerInspectionLogic>()
 
     fun checkWSConsumerAnnotation(
+        project: Project, // Added project parameter
         annotationElement: PsiElement,
         holder: ProblemsHolder,
         urlValue: String,
@@ -115,7 +116,7 @@ interface WSConsumerInspectionLogic {
     {
         // Base check: Ensure url or path is specified
         if (urlValue.isEmpty() && pathValue.isEmpty()) {
-            logIfEnabled(log, "plugin.rules.missing.url.and.path")
+            logIfEnabled(project, log, "plugin.rules.missing.url.and.path")
             holder.registerProblem(
                 annotationElement,
                 MyBundle.message("plugin.rules.missing.url.and.path", "Either 'url' or 'path' must be specified in @WSConsumer annotation."),
@@ -127,7 +128,7 @@ interface WSConsumerInspectionLogic {
 
         // Rule 1: If msConsumer is present, url should not be specified (use path only)
         if (hasMsConsumer && urlValue.isNotEmpty()) {
-            logIfEnabled(log, "plugin.rules.url.with.msconsumer")
+            logIfEnabled(project, log, "plugin.rules.url.with.msconsumer")
             holder.registerProblem(
                 annotationElement,
                 MyBundle.message("plugin.rules.url.with.msconsumer", "For @WSConsumer with msConsumer, 'url' must not be specified; use 'path' only.")
@@ -136,7 +137,7 @@ interface WSConsumerInspectionLogic {
 
         // Rule 2: The 'path' should not contain protocol information
         if (pathValue.isNotEmpty() && (pathValue.contains("http://") || pathValue.contains("https://"))) {
-            logIfEnabled(log, "plugin.rules.path.with.protocol")
+            logIfEnabled(project, log, "plugin.rules.path.with.protocol")
             holder.registerProblem(
                 annotationElement,
                 MyBundle.message("plugin.rules.path.with.protocol", "The 'path' attribute must not contain http/https; specify only a relative path.")
@@ -147,7 +148,7 @@ interface WSConsumerInspectionLogic {
         if (urlValue.isNotEmpty()) {
             val protocolIndex = urlValue.indexOf("://")
             if (protocolIndex > 0 && urlValue.substring(protocolIndex + 3).contains("//")) {
-                logIfEnabled(log, "plugin.rules.url.double.slashes")
+                logIfEnabled(project, log, "plugin.rules.url.double.slashes")
                 holder.registerProblem(
                     annotationElement,
                     MyBundle.message("plugin.rules.url.double.slashes", "The 'url' attribute contains invalid double slashes.")
@@ -157,7 +158,7 @@ interface WSConsumerInspectionLogic {
 
         // Rule 4: When only 'path' is specified, 'msConsumer' must be defined
         if (pathValue.isNotEmpty() && urlValue.isEmpty() && !hasMsConsumer) {
-            logIfEnabled(log, "plugin.rules.path.without.msconsumer")
+            logIfEnabled(project, log, "plugin.rules.path.without.msconsumer")
             holder.registerProblem(
                 annotationElement,
                 MyBundle.message("plugin.rules.path.without.msconsumer", "When only 'path' is specified, 'msConsumer' must be defined.")
@@ -172,7 +173,7 @@ interface WSConsumerInspectionLogic {
 
             for (host in invalidHosts) {
                 if (urlValue.contains(host)) {
-                    logIfEnabled(log, "plugin.rules.invalid.server: $host")
+                    logIfEnabled(project, log, "plugin.rules.invalid.server: $host")
                     holder.registerProblem(
                         annotationElement,
                         MyBundle.message("plugin.rules.invalid.server", "Invalid URL: ''{0}'' is in the list of restricted servers.", host)
@@ -187,13 +188,13 @@ interface WSConsumerInspectionLogic {
             // If a value is provided for msConsumer, it must be LOCAL
             val hasLocal = msConsumerValue.contains("LOCAL")
             if (msConsumerValue.isNotEmpty() && !hasLocal) {
-                logIfEnabled(log, "plugin.rules.pearl.msconsumer.local")
+                logIfEnabled(project, log, "plugin.rules.pearl.msconsumer.local")
                 holder.registerProblem(
                     annotationElement,
                     MyBundle.message("plugin.rules.pearl.msconsumer.local", "When used in PearlWebserviceConsumer, msConsumer value may only be omitted or set to LOCAL.")
                 )
             } else if (hasLocal && sslCertificateValidation) {
-                logIfEnabled(log, "plugin.rules.pearl.ssl.validation")
+                logIfEnabled(project, log, "plugin.rules.pearl.ssl.validation")
                 holder.registerProblem(
                     annotationElement,
                     MyBundle.message("plugin.rules.pearl.ssl.validation", "For PearlWebserviceConsumer with msConsumer set to LOCAL, sslCertificateValidation must be false.")
@@ -201,7 +202,7 @@ interface WSConsumerInspectionLogic {
             }
         } else if (!isPearlWebserviceConsumer && hasMsConsumer && msConsumerValue.contains("PEARL")) {
             // Rule 7: Disallow PEARL LbMsType for regular WebserviceConsumer
-            logIfEnabled(log, "plugin.rules.non.pearl.consumer")
+            logIfEnabled(project, log, "plugin.rules.non.pearl.consumer")
             holder.registerProblem(
                 annotationElement,
                 MyBundle.message("plugin.rules.non.pearl.consumer", "'PEARL' LbMsType is not allowed for WebserviceConsumer")
@@ -219,7 +220,7 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
         val annotations = psiClass.annotations
         for (annotation in annotations) {
             if (annotation.qualifiedName?.endsWith("WSConsumer") == true) {
-                logIfEnabled(log, "Found WSConsumer annotation, checkClass")
+                logIfEnabled(psiClass.project, log, "Found WSConsumer annotation, checkClass")
                 // Get properties by name instead of by type
                 val urlValue = annotation.findAttributeValue("url")
                 val pathValue = annotation.findAttributeValue("path")
@@ -248,7 +249,9 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
     ): PsiElementVisitor {
         return object : JavaElementVisitor() {
             override fun visitAnnotation(annotation: PsiAnnotation) {
-                logIfEnabled(log, "Found WSConsumer annotation, visit")
+                val project = annotation.project
+                logIfEnabled(project, log, "Found WSConsumer annotation, visit")
+
                 if (annotation.qualifiedName?.endsWith("WSConsumer") != true) {
                     return
                 }
@@ -293,6 +296,7 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
 
                 // Use the common logic
                 checkWSConsumerAnnotation(
+                    project,  // Pass the project
                     annotation,
                     holder,
                     urlValue,
@@ -306,11 +310,12 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
             }
 
             private fun isPearlWebserviceConsumer(element: PsiModifierListOwner): Boolean {
+                val project = element.project
                 if (element !is PsiClass) return false
                 // Check implemented interfaces
                 for (implemented in element.interfaces) {
                     if (implemented.qualifiedName?.endsWith("PearlWebserviceConsumer") == true) {
-                        logIfEnabled(log, "Found PearlWebServiceConsumer class, implement")
+                        logIfEnabled(project, log, "Found PearlWebServiceConsumer class, implement")
                         return true
                     }
                 }
@@ -319,7 +324,7 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
                 var superClass = element.superClass
                 while (superClass != null) {
                     if (superClass.qualifiedName?.endsWith("PearlWebserviceConsumer") == true) {
-                        logIfEnabled(log, "Found PearlWebServiceConsumer FQN class")
+                        logIfEnabled(project, log, "Found PearlWebServiceConsumer FQN class")
                         return true
                     }
                     superClass = superClass.superClass
@@ -341,6 +346,8 @@ class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspect
         object : KtVisitorVoid() {
             override fun visitAnnotationEntry(annotationEntry: KtAnnotationEntry) {
                 super.visitAnnotationEntry(annotationEntry)
+
+                val project = annotationEntry.project
 
                 // Process only annotations with the short name "WSConsumer"
                 val shortName = annotationEntry.shortName?.asString() ?: return
@@ -389,6 +396,7 @@ class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspect
 
                 // Use the common logic
                 checkWSConsumerAnnotation(
+                    project,  // Pass the project
                     annotationEntry,
                     holder,
                     urlValue,
