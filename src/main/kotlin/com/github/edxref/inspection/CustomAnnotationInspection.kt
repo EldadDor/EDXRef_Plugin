@@ -167,12 +167,12 @@ interface WSConsumerInspectionLogic {
 
         // Rule 5: Detect invalid URLs containing specific hosts
         if (urlValue.isNotEmpty()) {
-            // Get the list of invalid hosts from the bundle property
-            val invalidHostsStr = MyBundle.message("plugin.rules.invalid.address")
+            // Get the list of invalid hosts from settings
+            val invalidHostsStr = project.getWSConsumerSettings().invalidHosts
             val invalidHosts = invalidHostsStr.split(',').map { it.trim() }
 
             for (host in invalidHosts) {
-                if (urlValue.contains(host)) {
+                if (urlValue.contains(host) && host.isNotEmpty()) {
                     logIfEnabled(project, log, "plugin.rules.invalid.server: $host")
                     holder.registerProblem(
                         annotationElement,
