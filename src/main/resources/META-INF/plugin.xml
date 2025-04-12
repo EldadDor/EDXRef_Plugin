@@ -44,10 +44,10 @@
                 implementationClass="com.github.edxref.inspection.WSConsumerJavaInspection"/>
         <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
         <projectConfigurable
-                parentId="tools"
-                instance="com.github.edxref.settings.WSConsumerSettingsConfigurable"
                 id="com.github.edxref.settings.WSConsumerSettingsConfigurable"
-                displayName="WSConsumer Settings"/>
+                displayName="WSConsumer Settings"
+                instance="com.github.edxref.settings.WSConsumerSettingsConfigurable"
+                parentId="tools" />
     </extensions>
 
 

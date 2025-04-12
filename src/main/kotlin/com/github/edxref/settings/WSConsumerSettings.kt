@@ -16,7 +16,7 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
     // Inner data class to hold the state
     data class State(
         var enableLog: Boolean = false,
-        var invalidHosts: String = "msdevcz,msdevcrm,msdevbatch" // Default value from MyBundle
+        var invalidHosts: String = "msdevcz,msdevcrm,msdevbatch" // Default value
     )
 
     private var state = State()

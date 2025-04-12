@@ -1,5 +1,6 @@
 package com.github.edxref.settings
 
+import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 import com.intellij.openapi.options.Configurable
 import javax.swing.JComponent
 
@@ -14,15 +15,21 @@ class WSConsumerSettingsConfigurable : Configurable {
     }
 
     override fun isModified(): Boolean {
-        return settingsComponent?.panel?.isModified() ?: false
+        val settings = settingsComponent?.project?.getWSConsumerSettings() ?: return false
+        return settingsComponent!!.enableLogging != settings.enableLog ||
+                settingsComponent!!.invalidHosts != settings.invalidHosts
     }
 
     override fun apply() {
-        settingsComponent?.panel?.apply()
+        val settings = settingsComponent?.project?.getWSConsumerSettings() ?: return
+        settings.enableLog = settingsComponent!!.enableLogging
+        settings.invalidHosts = settingsComponent!!.invalidHosts
     }
 
     override fun reset() {
-        settingsComponent?.panel?.reset()
+        val settings = settingsComponent?.project?.getWSConsumerSettings() ?: return
+        settingsComponent!!.enableLogging = settings.enableLog
+        settingsComponent!!.invalidHosts = settings.invalidHosts
     }
 
     override fun disposeUIResources() {

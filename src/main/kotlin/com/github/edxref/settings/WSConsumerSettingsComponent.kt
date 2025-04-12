@@ -1,16 +1,11 @@
 package com.github.edxref.settings
 
-import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
-import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
-import com.intellij.ui.dsl.builder.panel
-import com.intellij.ui.dsl.builder.bindSelected
-import com.intellij.ui.dsl.builder.bindText
-import com.intellij.ui.dsl.builder.columns
+import com.intellij.util.ui.FormBuilder
 import javax.swing.JPanel
 
 class WSConsumerSettingsComponent {
@@ -18,40 +13,27 @@ class WSConsumerSettingsComponent {
     val project: Project = ProjectManager.getInstance().openProjects.firstOrNull()
         ?: ProjectManager.getInstance().defaultProject
 
-    // Settings object
-    private val settings = project.getWSConsumerSettings()
+    // UI components
+    private val enableLoggingCheckbox = JBCheckBox("Enable logging (helps with debugging)")
+    private val invalidHostsField = JBTextField()
 
-    // Advanced panel using UI DSL
-    val panel: DialogPanel = panel {
-        group("General Settings") {
-            row {
-                checkBox("Enable logging")
-                    .bindSelected({ settings.enableLog }, { settings.enableLog = it })
-                    .comment("When enabled, the plugin will log detailed information for debugging purposes")
-            }
-        }
+    // Main panel
+    val panel: JPanel = FormBuilder.createFormBuilder()
+        .addLabeledComponent(JBLabel("Invalid hosts (comma separated):"), invalidHostsField, 1, false)
+        .addComponent(enableLoggingCheckbox, 1)
+        .addComponentFillVertically(JPanel(), 0)
+        .panel
 
-        group("Inspection Settings") {
-            row {
-                label("Invalid hosts (comma separated):")
-                textField()
-                    .bindText({ settings.invalidHosts }, { settings.invalidHosts = it })
-                    .comment("List of host names that should be considered invalid in URLs")
-                    .columns(40)
-            }
-        }
-    }
-
-    // Simple property accessors for compatibility with the Configurable
+    // Getters and setters for the settings values
     var enableLogging: Boolean
-        get() = settings.enableLog
+        get() = enableLoggingCheckbox.isSelected
         set(value) {
-            settings.enableLog = value
+            enableLoggingCheckbox.isSelected = value
         }
 
     var invalidHosts: String
-        get() = settings.invalidHosts
+        get() = invalidHostsField.text
         set(value) {
-            settings.invalidHosts = value
+            invalidHostsField.text = value
         }
 }
