@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.github.edxref"
-version = "0.0.1"
+version = "1.0.0"
 
 // Set the JVM language level used to build the project
 kotlin {

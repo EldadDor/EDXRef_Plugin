@@ -47,7 +47,7 @@
                 id="com.github.edxref.settings.WSConsumerSettingsConfigurable"
                 displayName="WSConsumer Settings"
                 instance="com.github.edxref.settings.WSConsumerSettingsConfigurable"
-                parentId="tools" />
+                parentId="language" order="last" />
     </extensions>
 
 
