@@ -1,0 +1,45 @@
+<html>
+<body>
+<p>Validates parameters in <code>@WSConsumer</code> URLs against setter methods in <code>WebserviceConsumer</code> interfaces.</p>
+
+<p>This inspection checks interfaces that:</p>
+<ul>
+    <li>Are annotated with <code>@WSConsumer</code>.</li>
+    <li>Implement (directly or indirectly) the <code>WebserviceConsumer</code> interface.</li>
+</ul>
+
+<p>It ensures consistency between parameters defined in the <code>url</code> attribute (e.g., <code>@userId</code>) and setter methods annotated with <code>@WSParam</code>:</p>
+<ul>
+    <li><b>Error: Missing Setter:</b> Reports an error if a parameter like <code>@paramName</code> exists in the URL, but no corresponding setter method (e.g., <code>setParamName(...)</code> or a method with <code>@WSParam(name="paramName")</code>) is found in the interface.</li>
+    <li><b>Warning: Setter Name Mismatch:</b> Issues a warning if a setter method's name (e.g., <code>setUserIdParam</code>) doesn't conventionally match the parameter name specified or implied by <code>@WSParam(name="userId")</code>. This suggests renaming the setter for clarity (e.g., to <code>setUserId</code>).</li>
+    <li><b>Error: @WSParam Name Mismatch:</b> Reports an error if a setter has an explicit <code>@WSParam(name="explicitName")</code>, but <code>@explicitName</code> is *not* found as a parameter placeholder in the <code>@WSConsumer</code> URL. The <code>@WSParam</code> name takes precedence.</li>
+</ul>
+
+<p><b>Example:</b></p>
+<pre><code>
+@WSConsumer(url = "http://example.com/users/@userId/orders/@orderId", method = WSMethods.GET)
+public interface UserOrdersConsumer extends WebserviceConsumer {
+
+    // OK: Matches @userId in URL
+    @Property @WSParam(name = "userId")
+    void setUserId(String id);
+
+    // WARN: Setter name mismatch (setOrderId would be clearer)
+    @Property @WSParam(name = "orderId")
+    void setTheOrderIdentifier(String orderId);
+
+    // ERROR: @WSParam name "productId" not found in URL parameters (@userId, @orderId)
+    @Property @WSParam(name = "productId")
+    void setProductId(String prodId);
+
+    // Assume @status is NOT in the URL
+    // OK: No error if @WSParam matches a non-URL parameter (might be used differently)
+    @Property @WSParam(name = "status")
+    void setStatus(String status);
+}
+
+// ERROR: Missing setter for @orderId would be reported on the @WSConsumer annotation above
+// if setTheOrderIdentifier and its @WSParam were missing.
+</code></pre>
+</body>
+</html>

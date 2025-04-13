@@ -28,30 +28,49 @@
     <extensions defaultExtensionNs="com.intellij">
         <localInspection
                 language="kotlin"
-                shortName="WSConsumerKotlinInspection"
-                displayName="WSConsumer Annotation Inspection"
+                shortName="WSConsumerValidation"
+                displayName="WSConsumer Annotation Validation"
                 groupName="Web Service Inspections"
                 groupPath="Web Services, WS Inspections"
                 enabledByDefault="true"
+                level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSConsumerKotlinInspection"/>
         <localInspection
                 language="JAVA"
-                shortName="WSConsumerJavaInspection"
-                displayName="WSConsumer Annotation Inspection"
-                groupName="Web Service Inspections"
-                groupPath="Web Services, WS Inspections"
+                shortName="WSConsumerValidation"
+                displayName="WSConsumer annotation validation"
+                groupName="Web service inspections"
+                groupPath="Web services, WS inspections"
                 enabledByDefault="true"
+                level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSConsumerJavaInspection"/>
-        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+        <!-- NEW: Register WSInterfaceParamInspection -->
+        <localInspection language="JAVA"
+                         shortName="WSInterfaceParamValidation"
+                         displayName="WSConsumer interface parameter validation"
+                         groupName="Web service inspections"
+                         groupPath="Web services, WS inspections"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="com.github.edxref.inspection.WSInterfaceParamJavaInspection"/>
+        <localInspection language="kotlin"
+                         shortName="WSInterfaceParamValidation"
+                         displayName="WSConsumer interface parameter validation"
+                         groupName="Web service inspections"
+                         groupPath="Web services, WS inspections"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
+        <!--        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>-->
         <projectConfigurable
                 id="com.github.edxref.settings.WSConsumerSettingsConfigurable"
                 displayName="WSConsumer Settings"
                 instance="com.github.edxref.settings.WSConsumerSettingsConfigurable"
-                parentId="language" order="last" />
+                parentId="language" order="last"/>
     </extensions>
 
 
-    <applicationListeners>
+    <!--<applicationListeners>
         <listener class="com.github.edxref.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
-    </applicationListeners>
+    </applicationListeners>-->
 </idea-plugin>

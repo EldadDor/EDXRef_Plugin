@@ -1,0 +1,46 @@
+<html>
+<body>
+<p>Reports potential problems and violations of best practices in <code>@WSConsumer</code> annotations.</p>
+
+<p>This inspection validates the usage of the <code>@WSConsumer</code> annotation and checks for the following issues:</p>
+<ul>
+    <li><b>Missing URL/Path:</b> Ensures that either the <code>url</code> or <code>path</code> attribute is specified.</li>
+    <li><b>URL with msConsumer:</b> Flags the usage of the <code>url</code> attribute when <code>msConsumer</code> is also specified (the <code>path</code> attribute should be used instead for microservice routing).</li>
+    <li><b>Path Contains Protocol:</b> Checks that the <code>path</code> attribute contains only a relative path and not <code>http://</code> or <code>https://</code>.</li>
+    <li><b>Double Slashes in URL:</b> Detects invalid double slashes (<code>//</code>) within the <code>url</code> attribute, outside of the protocol part (e.g., <code>https://example.com//api</code>).</li>
+    <li><b>Path without msConsumer:</b> Requires the <code>msConsumer</code> attribute to be defined when only the <code>path</code> attribute is specified.</li>
+    <li><b>Invalid Host in URL:</b> Checks if the <code>url</code> points to a host listed as invalid or restricted (configurable in WSConsumer Settings).</li>
+    <li><b>Pearl Consumer Rules:</b>
+        <ul>
+            <li>Ensures that if <code>msConsumer</code> is specified on a <code>PearlWebserviceConsumer</code>, its value is only <code>LOCAL</code>.</li>
+            <li>Requires <code>sslCertificateValidation</code> to be <code>false</code> when <code>msConsumer</code> is set to <code>LOCAL</code> on a <code>PearlWebserviceConsumer</code>.</li>
+        </ul>
+    </li>
+    <li><b>Non-Pearl Consumer Rule:</b> Prevents the usage of <code>LbMsType.PEARL</code> in the <code>msConsumer</code> attribute for regular <code>WebserviceConsumer</code> implementations.</li>
+</ul>
+
+<p><b>Example of an invalid annotation:</b></p>
+<pre><code>
+// Rule 2: Path contains protocol
+@WSConsumer(path = "http://example.com/api/data", method = WSMethods.GET)
+public interface MyConsumer extends WebserviceConsumer { ... }
+
+// Rule 1: URL used with msConsumer
+@WSConsumer(url = "http://valid.com/api/resource", msConsumer = { LbMsType.CRM }, method = WSMethods.POST)
+public interface AnotherConsumer extends WebserviceConsumer { ... }
+
+// Rule 4: msConsumer missing when only path is used
+@WSConsumer(path = "/relative/path", method = WSMethods.GET)
+public interface PathOnlyConsumer extends WebserviceConsumer { ... }
+</code></pre>
+
+<p><b>Example of a valid annotation:</b></p>
+<pre><code>
+@WSConsumer(url = "https://api.example.com/data", method = WSMethods.GET)
+public interface ValidUrlConsumer extends WebserviceConsumer { ... }
+
+@WSConsumer(path = "/api/resource", msConsumer = { LbMsType.CRM }, method = WSMethods.POST)
+public interface ValidPathConsumer extends WebserviceConsumer { ... }
+</code></pre>
+</body>
+</html>

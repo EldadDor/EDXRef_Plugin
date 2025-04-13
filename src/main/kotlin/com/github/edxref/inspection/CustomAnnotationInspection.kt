@@ -217,7 +217,7 @@ interface WSConsumerInspectionLogic {
                 logIfEnabled(project, log, "plugin.rules.pearl.msconsumer.local")
                 holder.registerProblem(
                     annotationElement,
-                    MyBundle.message("plugin.rules.pearl.msconsumer.local", "When used in PearlWebserviceConsumer, msConsumer value may only be omitted or set to LOCAL."),
+                    MyBundle.message("plugin.rules.pearl.msconsumer.local", "When used in PearlWebserviceConsumer, msConsumer value may only be set to PEARL or LOCAL."),
                     ProblemHighlightType.ERROR // Changed to ERROR
                 )
             } else if (hasLocal && sslCertificateValidation) { // Only check SSL if LOCAL is present
