@@ -20,34 +20,44 @@ import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKot
 import org.jetbrains.kotlin.psi.*
 import java.util.regex.Pattern
 
-// --- Constants ---
-private const val WSCONSUMER_ANNOTATION_FQN = "com.github.edxref.annotations.WSConsumer" // ADJUST PACKAGE if needed
-private const val WEBSERVICE_CONSUMER_FQN = "com.github.edxref.annotations.WebserviceConsumer" // ADJUST PACKAGE if needed
-private const val WSPARAM_ANNOTATION_FQN = "com.github.edxref.annotations.WSParam" // ADJUST PACKAGE if needed
-private const val PROPERTY_ANNOTATION_FQN = "com.github.edxref.annotations.Property" // ADJUST PACKAGE if needed
+// --- Default Constants (Fallbacks) ---
+// It's good practice to define defaults in case settings are empty or unavailable
+private const val DEFAULT_WSCONSUMER_ANNOTATION_FQN = "com.github.edxref.annotations.WSConsumer"
+private const val DEFAULT_WEBSERVICE_CONSUMER_FQN = "com.github.edxref.annotations.WebserviceConsumer"
+private const val DEFAULT_WSPARAM_ANNOTATION_FQN = "com.github.edxref.annotations.WSParam"
+private const val DEFAULT_PROPERTY_ANNOTATION_FQN = "com.github.edxref.annotations.Property"
 
-// --- Logger Helper (assuming you have one) ---
+// --- Logger Helper ---
 private fun logIfEnabled(project: Project, logger: Logger, message: String) {
-    // Replace with your actual implementation if using settings
-    logger.info(message) // Simple logging for now
+    try {
+        if (project.getWSConsumerSettings().enableLog) {
+            logger.info(message)
+        }
+    } catch (e: Exception) {
+        // Ignore exceptions during logging check (e.g., settings not ready)
+    }
 }
 
+// --- Settings Accessors with Fallbacks ---
 private fun getSettings(project: Project): WSConsumerSettings {
+    // Consider adding error handling if service can't be retrieved
     return project.getWSConsumerSettings()
 }
 
-
 private fun getWsConsumerAnnotationFqn(project: Project): String {
-    return getSettings(project).wsConsumerAnnotationFqn.ifBlank { WSCONSUMER_ANNOTATION_FQN }
+    return getSettings(project).wsConsumerAnnotationFqn.ifBlank { DEFAULT_WSCONSUMER_ANNOTATION_FQN }
 }
-private fun getWsConsumerFqn(project: Project): String {
-    return getSettings(project).webserviceConsumerFqn.ifBlank { WEBSERVICE_CONSUMER_FQN }
+
+private fun getWebserviceConsumerFqn(project: Project): String { // Renamed for clarity
+    return getSettings(project).webserviceConsumerFqn.ifBlank { DEFAULT_WEBSERVICE_CONSUMER_FQN }
 }
+
 private fun getWsParamFqn(project: Project): String {
-    return getSettings(project).wsParamAnnotationFqn.ifBlank { WSPARAM_ANNOTATION_FQN }
+    return getSettings(project).wsParamAnnotationFqn.ifBlank { DEFAULT_WSPARAM_ANNOTATION_FQN }
 }
-private fun getWsPropertyFqn(project: Project): String {
-    return getSettings(project).propertyAnnotationFqn.ifBlank { PROPERTY_ANNOTATION_FQN }
+
+private fun getPropertyFqn(project: Project): String { // Renamed for clarity
+    return getSettings(project).propertyAnnotationFqn.ifBlank { DEFAULT_PROPERTY_ANNOTATION_FQN }
 }
 
 // --- Helper Functions ---
@@ -60,8 +70,7 @@ private fun extractUrlParameters(url: String?): Set<String> {
         return emptySet()
     }
     val params = mutableSetOf<String>()
-    // Regex to find @ followed by word characters
-    val pattern = Pattern.compile("@(\\w+)")
+    val pattern = Pattern.compile("@(\\w+)") // Regex to find @ followed by word characters
     val matcher = pattern.matcher(url)
     while (matcher.find()) {
         params.add(matcher.group(1)) // Add the group captured (the name without @)
@@ -70,7 +79,7 @@ private fun extractUrlParameters(url: String?): Set<String> {
 }
 
 /**
- * Gets the effective parameter name from a setter method.
+ * Gets the effective parameter name from a setter method using configurable FQN.
  * Uses @WSParam(name=...) if present and non-empty, otherwise derives from the setter name.
  * Returns null if it's not a valid setter or cannot determine a name.
  */
@@ -78,18 +87,15 @@ private fun getEffectiveParamName(method: PsiMethod): String? {
     if (!method.name.startsWith("set") || method.parameterList.parametersCount != 1) {
         return null // Not a standard setter
     }
-
-    val wsParamAnnotation = method.getAnnotation(getWsParamFqn(method.project))
+    val project = method.project
+    val wsParamAnnotation = method.getAnnotation(getWsParamFqn(project)) // Use setting
     if (wsParamAnnotation != null) {
-        // --- CORRECTED WAY TO GET STRING ATTRIBUTE VALUE ---
         val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
         val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
             nameAttrValue.value as String
         } else {
-            null // Not a string literal or not found
+            null
         }
-        // --- END CORRECTION ---
-
         if (!explicitName.isNullOrBlank()) {
             return explicitName // Explicit name takes precedence
         }
@@ -102,36 +108,32 @@ private fun getEffectiveParamName(method: PsiMethod): String? {
     return null
 }
 
-// Kotlin version
+// Kotlin version - Needs update to use settings FQN if pure Kotlin PSI checks are added later
 private fun getEffectiveParamName(function: KtNamedFunction): String? {
-    if (!function.nameIdentifier?.text?.startsWith("set")!! || function.valueParameters.size != 1) {
+    val functionName = function.nameIdentifier?.text ?: return null
+    if (!functionName.startsWith("set") || function.valueParameters.size != 1) {
         return null // Not a standard setter
     }
-    val functionName = function.nameIdentifier?.text ?: return null
-
+    val project = function.project
+    // Note: This Kotlin check still uses shortName. For accuracy with settings,
+    // rely on the PsiMethod version via toLightClass or implement full Kotlin type resolution.
     val wsParamAnnotation = function.annotationEntries.find {
-        // Basic check, refine with type resolution if needed
-        it.shortName?.asString() == "WSParam"
+        it.shortName?.asString() == getWsParamFqn(project).substringAfterLast('.') // Basic short name check
     }
 
     if (wsParamAnnotation != null) {
         val nameArgument = wsParamAnnotation.valueArguments.find { it.getArgumentName()?.asName?.asString() == "name" }
         val explicitNameExpr = nameArgument?.getArgumentExpression()
-        // Check if it's a string template (covers simple strings)
         if (explicitNameExpr is KtStringTemplateExpression) {
-            // Attempt to get the simple content if no interpolation
             val explicitName = explicitNameExpr.entries
                 .filterIsInstance<KtLiteralStringTemplateEntry>()
-                .joinToString("") { it.text } // Get text content of literal parts
-
+                .joinToString("") { it.text }
             if (explicitName.isNotBlank()) {
-                return explicitName // Explicit name takes precedence
+                return explicitName
             }
         }
-        // TODO: Handle constant references if needed
     }
 
-    // Derive name from setter: setUserId -> userId
     if (functionName.length > 3) {
         return functionName.substring(3).replaceFirstChar { it.lowercaseChar() }
     }
@@ -143,32 +145,22 @@ private fun getEffectiveParamName(function: KtNamedFunction): String? {
  * Checks if a class/interface inherits from a specific fully qualified name.
  */
 private fun isImplementingInterface(psiClass: PsiClass, interfaceFqn: String): Boolean {
+    // Handle cases where FQN might be empty from settings
+    if (interfaceFqn.isBlank()) return false
     return InheritanceUtil.isInheritor(psiClass, interfaceFqn)
 }
 
-// Kotlin version (basic PSI check, might need refinement with type resolution)
+// Kotlin version
 private fun isImplementingInterface(ktClass: KtClass, interfaceFqn: String): Boolean {
-    // Check using KtLightClass for better Java interop/hierarchy check
+    if (interfaceFqn.isBlank()) return false
     val lightClass = ktClass.toLightClass()
     if (lightClass != null) {
         return InheritanceUtil.isInheritor(lightClass, interfaceFqn)
     }
-
-    // Fallback to basic PSI check (less reliable for complex hierarchies)
+    // Basic fallback (less reliable)
     val shortName = interfaceFqn.substringAfterLast('.')
-    fun checkHierarchy(currentClass: KtClass?): Boolean {
-        if (currentClass == null) return false
-        currentClass.superTypeListEntries.forEach { entry ->
-            val typeRefText = entry.typeReference?.text
-            if (typeRefText == shortName) return true // Direct match by short name (simplistic)
-            // TODO: Add proper type resolution here for accuracy if needed
-        }
-        // Check super classes recursively (basic)
-        // val superClass = currentClass.getSuperClass() // Helper needed
-        // if (checkHierarchy(superClass)) return true
-        return false
-    }
-    return checkHierarchy(ktClass)
+    // ... (rest of basic fallback if needed) ...
+    return false // Prefer light class check
 }
 
 
@@ -182,120 +174,131 @@ interface WSInterfaceParamInspectionLogic {
         psiClass: PsiClass, // Use PsiClass as common ground for Java/Kotlin light class
         holder: ProblemsHolder
     ) {
-        // 1. Basic checks (already done by visitor filters, but good practice)
+        // 1. Basic checks
         if (!psiClass.isInterface) return
 
-        // 2. Check for @WSConsumer
-        val wsConsumerAnnotation = psiClass.getAnnotation(getWsConsumerAnnotationFqn(project)) ?: return
-        logIfEnabled(project, log, "Found @WSConsumer on interface ${psiClass.name}")
+        // 2. Check for @WSConsumer using settings FQN
+        val wsConsumerAnnotationFqn = getWsConsumerAnnotationFqn(project)
+        val wsConsumerAnnotation = psiClass.getAnnotation(wsConsumerAnnotationFqn) ?: return
+        logIfEnabled(project, log, "Found @${wsConsumerAnnotationFqn.substringAfterLast('.')} on interface ${psiClass.name}")
 
-        // 3. Check if it implements WebserviceConsumer
-        val interfaceFqn = getWsParamFqn(project)
-        if (!isImplementingInterface(psiClass, interfaceFqn)) {
-            logIfEnabled(project, log, "Interface ${psiClass.name} does not implement $interfaceFqn")
+        // 3. Check if it implements WebserviceConsumer using settings FQN
+        val webserviceConsumerFqn = getWebserviceConsumerFqn(project)
+        if (!isImplementingInterface(psiClass, webserviceConsumerFqn)) {
+            logIfEnabled(project, log, "Interface ${psiClass.name} does not implement $webserviceConsumerFqn")
             return
         }
-        logIfEnabled(project, log, "Interface ${psiClass.name} implements $interfaceFqn")
+        logIfEnabled(project, log, "Interface ${psiClass.name} implements $webserviceConsumerFqn")
 
         // 4. Extract URL parameters
-        // --- CORRECTED WAY TO GET STRING ATTRIBUTE VALUE ---
         val urlAttrValue = wsConsumerAnnotation.findAttributeValue("url")
         val urlValue = if (urlAttrValue is PsiLiteralExpression && urlAttrValue.value is String) {
             urlAttrValue.value as String
         } else {
-            null // URL is not a string literal or not found
+            null
         }
-        // --- END CORRECTION ---
 
         val urlParams = extractUrlParameters(urlValue)
         if (urlParams.isEmpty()) {
             logIfEnabled(project, log, "No @parameters found in URL for ${psiClass.name}")
-            return // Nothing to validate
+            // Even if no URL params, we still need to check for missing @Property on setters
+            // return // DO NOT return early
         }
         logIfEnabled(project, log, "URL Params for ${psiClass.name}: $urlParams")
 
-        // 5. Find all relevant setter methods and their effective param names
-        val methodParamMap = mutableMapOf<String, MutableList<PsiMethod>>() // Map: effectiveParamName -> List<Method>
-        val methodsWithExplicitWsParamName = mutableMapOf<PsiMethod, String>() // Map: Method -> Explicit WSParam Name
+        // 5. Find all relevant setter methods, check @Property, and map effective param names
+        val methodParamMap = mutableMapOf<String, MutableList<PsiMethod>>()
+        val methodsWithExplicitWsParamName = mutableMapOf<PsiMethod, String>()
+        val propertyAnnotationFqn = getPropertyFqn(project) // Get Property FQN from settings
+        val propertyAnnotationShortName = propertyAnnotationFqn.substringAfterLast('.')
 
-        // Consider using psiClass.allMethods to include inherited methods if necessary
-        // Using psiClass.methods only gets methods directly declared in this interface
+        // Use psiClass.methods to check only methods declared directly in this interface
         for (method in psiClass.methods) {
-            val effectiveName = getEffectiveParamName(method) ?: continue // Skip non-setters or those without a name
+            // Check if it looks like a setter BEFORE checking @Property
+            if (!method.name.startsWith("set") || method.parameterList.parametersCount != 1) {
+                continue // Skip non-setter methods
+            }
 
-            methodParamMap.computeIfAbsent(effectiveName) { mutableListOf() }.add(method)
+            // *** NEW: Check for @Property annotation ***
+            if (method.getAnnotation(propertyAnnotationFqn) == null) {
+                logIfEnabled(project, log, "ERROR: Setter method '${method.name}' is missing the @$propertyAnnotationShortName annotation.")
+                holder.registerProblem(
+                    method.nameIdentifier ?: method, // Highlight method name
+                    MyBundle.message("inspection.wsinterfaceparam.error.missing.property.annotation", method.name, propertyAnnotationShortName),
+                    ProblemHighlightType.ERROR
+                )
+                // Continue processing other rules for this method even if @Property is missing
+            }
+            // *** END NEW CHECK ***
 
-            // Store methods with explicit @WSParam names for Rule 3
-            val wsParamAnnotation = method.getAnnotation(getWsParamFqn(project))
-            if (wsParamAnnotation != null) {
-                // --- CORRECTED WAY TO GET STRING ATTRIBUTE VALUE ---
-                val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
-                val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
-                    nameAttrValue.value as String
-                } else {
-                    null
-                }
-                // --- END CORRECTION ---
-                if (!explicitName.isNullOrBlank()) {
-                    methodsWithExplicitWsParamName[method] = explicitName
+            // Now get the effective name for URL param matching
+            val effectiveName = getEffectiveParamName(method)
+            if (effectiveName != null) { // Only map if it has an effective name (relevant to URL params or explicit @WSParam)
+                methodParamMap.computeIfAbsent(effectiveName) { mutableListOf() }.add(method)
+
+                // Store methods with explicit @WSParam names for Rule 3
+                val wsParamAnnotation = method.getAnnotation(getWsParamFqn(project)) // Use setting
+                if (wsParamAnnotation != null) {
+                    val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
+                    val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
+                        nameAttrValue.value as String
+                    } else {
+                        null
+                    }
+                    if (!explicitName.isNullOrBlank()) {
+                        methodsWithExplicitWsParamName[method] = explicitName
+                    }
                 }
             }
         }
         logIfEnabled(project, log, "Effective Method Params for ${psiClass.name}: ${methodParamMap.keys}")
 
-        // 6. Perform Validations
-
-        // Rule 1: Check if all URL params have a corresponding setter
-        val foundMethodParams = methodParamMap.keys
-        val missingParams = urlParams - foundMethodParams
-        if (missingParams.isNotEmpty()) {
-            missingParams.forEach { missingParam ->
-                logIfEnabled(project, log, "ERROR: Missing setter for URL param '@$missingParam'")
-                // Highlight the URL attribute value if possible, otherwise the annotation/class name
-                val highlightElement = wsConsumerAnnotation.findAttributeValue("url") ?: wsConsumerAnnotation.nameReferenceElement ?: psiClass.nameIdentifier ?: psiClass
-                holder.registerProblem(
-                    highlightElement,
-                    MyBundle.message("inspection.wsinterfaceparam.error.missing.setter", missingParam),
-                    ProblemHighlightType.ERROR
-                )
-            }
-        }
-
-        // Iterate through methods found
-        methodParamMap.forEach { (effectiveParamName, methods) ->
-            methods.forEach { method ->
-                // Rule 2: Check for setter name mismatch (WARN)
-                val derivedFromName = method.name.substring(3).replaceFirstChar { it.lowercaseChar() }
-                // Only warn if an explicit @WSParam name was NOT used to define the effective name
-                if (effectiveParamName == derivedFromName && method !in methodsWithExplicitWsParamName) {
-                    // This case is fine - name derived matches setter name
-                } else if (effectiveParamName != derivedFromName && method !in methodsWithExplicitWsParamName) {
-                    // This case shouldn't happen based on getEffectiveParamName logic, but check anyway
-                    logIfEnabled(project, log, "WARN: Setter name '${method.name}' differs from derived param '$derivedFromName' unexpectedly.")
-                } else if (effectiveParamName != derivedFromName && method in methodsWithExplicitWsParamName) {
-                    // This is the intended warning: explicit @WSParam name used, differs from setter convention
-                    logIfEnabled(project, log, "WARN: Setter name '${method.name}' differs from effective param '$effectiveParamName' defined by @WSParam.")
+        // 6. Perform URL Parameter Validations (only if there were URL params)
+        if (urlParams.isNotEmpty()) {
+            // Rule 1: Check if all URL params have a corresponding setter
+            val foundMethodParams = methodParamMap.keys
+            val missingParams = urlParams - foundMethodParams
+            if (missingParams.isNotEmpty()) {
+                missingParams.forEach { missingParam ->
+                    logIfEnabled(project, log, "ERROR: Missing setter for URL param '@$missingParam'")
+                    val highlightElement = wsConsumerAnnotation.findAttributeValue("url") ?: wsConsumerAnnotation.nameReferenceElement ?: psiClass.nameIdentifier ?: psiClass
                     holder.registerProblem(
-                        method.nameIdentifier ?: method,
-                        MyBundle.message("inspection.wsinterfaceparam.warn.setter.name.mismatch", method.name, effectiveParamName),
-                        ProblemHighlightType.WARNING // Severity WARN
-                    )
-                }
-
-
-                // Rule 3: Check if explicit @WSParam name matches a URL param (ERROR)
-                val explicitWsParamName = methodsWithExplicitWsParamName[method]
-                if (explicitWsParamName != null && explicitWsParamName !in urlParams) {
-                    logIfEnabled(project, log, "ERROR: Explicit @WSParam name '$explicitWsParamName' not in URL params $urlParams")
-                    val wsParamNameValueElement = method.getAnnotation(getWsParamFqn(project))?.findAttributeValue("name")
-                    holder.registerProblem(
-                        wsParamNameValueElement ?: method.getAnnotation(getWsParamFqn(project)) ?: method.nameIdentifier ?: method,
-                        MyBundle.message("inspection.wsinterfaceparam.error.wsparam.name.mismatch", explicitWsParamName, urlParams.joinToString()),
-                        ProblemHighlightType.ERROR // Severity ERROR
+                        highlightElement,
+                        MyBundle.message("inspection.wsinterfaceparam.error.missing.setter", missingParam),
+                        ProblemHighlightType.ERROR
                     )
                 }
             }
-        }
+
+            // Iterate through methods mapped to effective param names
+            methodParamMap.forEach { (effectiveParamName, methods) ->
+                methods.forEach { method ->
+                    // Rule 2: Check for setter name mismatch (WARN)
+                    val derivedFromName = method.name.substring(3).replaceFirstChar { it.lowercaseChar() }
+                    if (effectiveParamName != derivedFromName && method in methodsWithExplicitWsParamName) {
+                        // Warn only if explicit @WSParam name differs from setter convention
+                        logIfEnabled(project, log, "WARN: Setter name '${method.name}' differs from effective param '$effectiveParamName' defined by @WSParam.")
+                        holder.registerProblem(
+                            method.nameIdentifier ?: method,
+                            MyBundle.message("inspection.wsinterfaceparam.warn.setter.name.mismatch", method.name, effectiveParamName),
+                            ProblemHighlightType.WARNING // Severity WARN
+                        )
+                    }
+
+                    // Rule 3: Check if explicit @WSParam name matches a URL param (ERROR)
+                    val explicitWsParamName = methodsWithExplicitWsParamName[method]
+                    if (explicitWsParamName != null && explicitWsParamName !in urlParams) {
+                        logIfEnabled(project, log, "ERROR: Explicit @WSParam name '$explicitWsParamName' not in URL params $urlParams")
+                        val wsParamNameValueElement = method.getAnnotation(getWsParamFqn(project))?.findAttributeValue("name")
+                        holder.registerProblem(
+                            wsParamNameValueElement ?: method.getAnnotation(getWsParamFqn(project)) ?: method.nameIdentifier ?: method,
+                            MyBundle.message("inspection.wsinterfaceparam.error.wsparam.name.mismatch", explicitWsParamName, urlParams.joinToString()),
+                            ProblemHighlightType.ERROR // Severity ERROR
+                        )
+                    }
+                }
+            }
+        } // End of URL parameter validation block
     }
 }
 
@@ -309,7 +312,6 @@ class WSInterfaceParamJavaInspection : AbstractBaseJavaLocalInspectionTool(), WS
         return object : JavaElementVisitor() {
             override fun visitClass(psiClass: PsiClass) {
                 super.visitClass(psiClass)
-                // Filter for interfaces only before calling the main logic
                 if (psiClass.isInterface) {
                     validateInterfaceParams(psiClass.project, psiClass, holder)
                 }
@@ -325,17 +327,14 @@ class WSInterfaceParamKotlinInspection : AbstractKotlinInspection(), WSInterface
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
         return object : KtVisitorVoid() {
-            override fun visitClassOrObject(classOrObject: KtClassOrObject) { // Visit classes and objects
+            override fun visitClassOrObject(classOrObject: KtClassOrObject) {
                 super.visitClassOrObject(classOrObject)
-                // Ensure it's an interface
                 if (classOrObject is KtClass && classOrObject.isInterface()) {
-                    // Try to get the corresponding PsiClass (light class) for consistent hierarchy checks
                     val psiClass = classOrObject.toLightClass()
                     if (psiClass != null) {
                         validateInterfaceParams(classOrObject.project, psiClass, holder)
                     } else {
                         logIfEnabled(classOrObject.project, log, "Could not get LightClass for Kotlin interface ${classOrObject.name}")
-                        // Optionally add fallback logic using pure Kotlin PSI checks if light classes fail
                     }
                 }
             }
