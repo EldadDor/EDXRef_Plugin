@@ -4,6 +4,8 @@ package com.github.edxref.inspection
 // import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 // Removed incorrect PsiUtil import if it was added
 import com.github.edxref.MyBundle
+import com.github.edxref.settings.WSConsumerSettings
+import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool
 import com.intellij.codeInspection.LocalInspectionToolSession
 import com.intellij.codeInspection.ProblemHighlightType
@@ -28,6 +30,24 @@ private const val PROPERTY_ANNOTATION_FQN = "com.github.edxref.annotations.Prope
 private fun logIfEnabled(project: Project, logger: Logger, message: String) {
     // Replace with your actual implementation if using settings
     logger.info(message) // Simple logging for now
+}
+
+private fun getSettings(project: Project): WSConsumerSettings {
+    return project.getWSConsumerSettings()
+}
+
+
+private fun getWsConsumerAnnotationFqn(project: Project): String {
+    return getSettings(project).wsConsumerAnnotationFqn.ifBlank { WSCONSUMER_ANNOTATION_FQN }
+}
+private fun getWsConsumerFqn(project: Project): String {
+    return getSettings(project).webserviceConsumerFqn.ifBlank { WEBSERVICE_CONSUMER_FQN }
+}
+private fun getWsParamFqn(project: Project): String {
+    return getSettings(project).wsParamAnnotationFqn.ifBlank { WSPARAM_ANNOTATION_FQN }
+}
+private fun getWsPropertyFqn(project: Project): String {
+    return getSettings(project).propertyAnnotationFqn.ifBlank { PROPERTY_ANNOTATION_FQN }
 }
 
 // --- Helper Functions ---
@@ -59,7 +79,7 @@ private fun getEffectiveParamName(method: PsiMethod): String? {
         return null // Not a standard setter
     }
 
-    val wsParamAnnotation = method.getAnnotation(WSPARAM_ANNOTATION_FQN)
+    val wsParamAnnotation = method.getAnnotation(getWsParamFqn(method.project))
     if (wsParamAnnotation != null) {
         // --- CORRECTED WAY TO GET STRING ATTRIBUTE VALUE ---
         val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
@@ -166,15 +186,16 @@ interface WSInterfaceParamInspectionLogic {
         if (!psiClass.isInterface) return
 
         // 2. Check for @WSConsumer
-        val wsConsumerAnnotation = psiClass.getAnnotation(WSCONSUMER_ANNOTATION_FQN) ?: return
+        val wsConsumerAnnotation = psiClass.getAnnotation(getWsConsumerAnnotationFqn(project)) ?: return
         logIfEnabled(project, log, "Found @WSConsumer on interface ${psiClass.name}")
 
         // 3. Check if it implements WebserviceConsumer
-        if (!isImplementingInterface(psiClass, WEBSERVICE_CONSUMER_FQN)) {
-            logIfEnabled(project, log, "Interface ${psiClass.name} does not implement $WEBSERVICE_CONSUMER_FQN")
+        val interfaceFqn = getWsParamFqn(project)
+        if (!isImplementingInterface(psiClass, interfaceFqn)) {
+            logIfEnabled(project, log, "Interface ${psiClass.name} does not implement $interfaceFqn")
             return
         }
-        logIfEnabled(project, log, "Interface ${psiClass.name} implements $WEBSERVICE_CONSUMER_FQN")
+        logIfEnabled(project, log, "Interface ${psiClass.name} implements $interfaceFqn")
 
         // 4. Extract URL parameters
         // --- CORRECTED WAY TO GET STRING ATTRIBUTE VALUE ---
@@ -205,7 +226,7 @@ interface WSInterfaceParamInspectionLogic {
             methodParamMap.computeIfAbsent(effectiveName) { mutableListOf() }.add(method)
 
             // Store methods with explicit @WSParam names for Rule 3
-            val wsParamAnnotation = method.getAnnotation(WSPARAM_ANNOTATION_FQN)
+            val wsParamAnnotation = method.getAnnotation(getWsParamFqn(project))
             if (wsParamAnnotation != null) {
                 // --- CORRECTED WAY TO GET STRING ATTRIBUTE VALUE ---
                 val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
@@ -266,9 +287,9 @@ interface WSInterfaceParamInspectionLogic {
                 val explicitWsParamName = methodsWithExplicitWsParamName[method]
                 if (explicitWsParamName != null && explicitWsParamName !in urlParams) {
                     logIfEnabled(project, log, "ERROR: Explicit @WSParam name '$explicitWsParamName' not in URL params $urlParams")
-                    val wsParamNameValueElement = method.getAnnotation(WSPARAM_ANNOTATION_FQN)?.findAttributeValue("name")
+                    val wsParamNameValueElement = method.getAnnotation(getWsParamFqn(project))?.findAttributeValue("name")
                     holder.registerProblem(
-                        wsParamNameValueElement ?: method.getAnnotation(WSPARAM_ANNOTATION_FQN) ?: method.nameIdentifier ?: method,
+                        wsParamNameValueElement ?: method.getAnnotation(getWsParamFqn(project)) ?: method.nameIdentifier ?: method,
                         MyBundle.message("inspection.wsinterfaceparam.error.wsparam.name.mismatch", explicitWsParamName, urlParams.joinToString()),
                         ProblemHighlightType.ERROR // Severity ERROR
                     )

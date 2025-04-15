@@ -16,7 +16,11 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
     // Inner data class to hold the state
     data class State(
         var enableLog: Boolean = false,
-        var invalidHosts: String = "msdevcz,msdevcrm,msdevbatch" // Default value
+        var invalidHosts: String = "msdevcz,msdevcrm,msdevbatch", // Default value
+        var wsConsumerAnnotationFqn: String = "com.github.edxref.annotations.WSConsumer",
+        var webserviceConsumerFqn: String = "com.github.edxref.annotations.WebserviceConsumer",
+        var wsParamAnnotationFqn: String = "com.github.edxref.annotations.WSParam",
+        var propertyAnnotationFqn: String = "com.github.edxref.annotations.Property"
     )
 
     private var state = State()
@@ -38,6 +42,30 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
         get() = state.invalidHosts
         set(value) {
             state.invalidHosts = value
+        }
+
+    var wsConsumerAnnotationFqn: String
+        get() = state.wsConsumerAnnotationFqn
+        set(value) {
+            state.wsConsumerAnnotationFqn = value
+        }
+
+    var webserviceConsumerFqn: String
+        get() = state.webserviceConsumerFqn
+        set(value) {
+            state.webserviceConsumerFqn = value
+        }
+
+    var wsParamAnnotationFqn: String
+        get() = state.wsParamAnnotationFqn
+        set(value) {
+            state.wsParamAnnotationFqn = value
+        }
+
+    var propertyAnnotationFqn: String
+        get() = state.propertyAnnotationFqn
+        set(value) {
+            state.propertyAnnotationFqn = value
         }
 
     companion object {
