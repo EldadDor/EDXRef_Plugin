@@ -25,10 +25,10 @@ private fun logIfEnabled(project: Project, logger: Logger, message: String) {
         }
     } catch (e: NoClassDefFoundError) {
         // Handle case where settings class might not be available yet or during tests
-         logger.warn("WSConsumerSettings not found, logging disabled for this check.", e)
+        logger.warn("WSConsumerSettings not found, logging disabled for this check.", e)
     } catch (e: Exception) {
         // Catch other potential exceptions during settings access
-         logger.error("Error accessing WSConsumerSettings", e)
+        logger.error("Error accessing WSConsumerSettings", e)
     }
 }
 
@@ -126,8 +126,7 @@ interface WSConsumerInspectionLogic {
         msConsumerValue: String,
         isPearlWebserviceConsumer: Boolean,
         isJava: Boolean // Added isJava parameter
-    )
-    {
+    ) {
         // Base check: Ensure url or path is specified
         if (urlValue.isEmpty() && pathValue.isEmpty()) {
             logIfEnabled(project, log, "plugin.rules.missing.url.and.path")
@@ -211,33 +210,60 @@ interface WSConsumerInspectionLogic {
 
         // Rule 6: Further restrictions for PearlWebserviceConsumer
         if (isPearlWebserviceConsumer && hasMsConsumer) {
-            // If a value is provided for msConsumer, it must be LOCAL
-            val hasLocal = msConsumerValue.contains("LOCAL")
-            if (msConsumerValue.isNotEmpty() && !hasLocal) { // Check if msConsumerValue is not empty AND doesn't contain LOCAL
-                logIfEnabled(project, log, "plugin.rules.pearl.msconsumer.local")
+            // Check if the msConsumerValue contains any LbMsType *other than* PEARL or LOCAL.
+            // This text-based check is somewhat fragile but matches the current data structure.
+            // It assumes LbMsType enum values are CRM, CZ, BATCH, PEARL, LOCAL, NONE.
+            val containsInvalidType = msConsumerValue.contains("CRM") ||
+                    msConsumerValue.contains("CZ") ||
+                    msConsumerValue.contains("BATCH") ||
+                    msConsumerValue.contains("NONE") // Assuming NONE is also invalid here
+
+            if (containsInvalidType) {
+                // Found an invalid type like CRM, CZ, BATCH, or NONE
+                logIfEnabled(project, log, "plugin.rules.pearl.msconsumer.invalid") // Use the updated key if you changed it
                 holder.registerProblem(
-                    annotationElement,
-                    MyBundle.message("plugin.rules.pearl.msconsumer.local", "When used in PearlWebserviceConsumer, msConsumer value may only be set to PEARL or LOCAL."),
-                    ProblemHighlightType.ERROR // Changed to ERROR
+                    // Try to highlight the msConsumer attribute value if possible
+                    findHighlightElementForAttribute(annotationElement, "msConsumer") ?: annotationElement,
+                    MyBundle.message("plugin.rules.pearl.msconsumer.invalid"), // Use the updated message
+                    ProblemHighlightType.ERROR
                 )
-            } else if (hasLocal && sslCertificateValidation) { // Only check SSL if LOCAL is present
-                logIfEnabled(project, log, "plugin.rules.pearl.ssl.validation")
-                holder.registerProblem(
-                    annotationElement,
-                    MyBundle.message("plugin.rules.pearl.ssl.validation", "For PearlWebserviceConsumer with msConsumer set to LOCAL, sslCertificateValidation must be false."),
-                    ProblemHighlightType.ERROR // Changed to ERROR
-                )
+            } else {
+                // No invalid types found (only PEARL, LOCAL, or both might be present)
+                // Now check the SSL rule specifically if LOCAL is present.
+                val containsLocal = msConsumerValue.contains("LOCAL")
+                if (containsLocal && sslCertificateValidation) {
+                    logIfEnabled(project, log, "plugin.rules.pearl.ssl.validation")
+                    holder.registerProblem(
+                        // Try to highlight the sslCertificateValidation attribute value
+                        findHighlightElementForAttribute(annotationElement, "sslCertificateValidation") ?: annotationElement,
+                        MyBundle.message("plugin.rules.pearl.ssl.validation", "For PearlWebserviceConsumer with msConsumer set to LOCAL, sslCertificateValidation must be false."),
+                        ProblemHighlightType.ERROR
+                    )
+                }
+                // If only PEARL is present, or if LOCAL is present with sslCertificateValidation=false, no error is reported here.
             }
-        } else if (!isPearlWebserviceConsumer && hasMsConsumer && msConsumerValue.contains("PEARL")) {
-            // Rule 7: Disallow PEARL LbMsType for regular WebserviceConsumer
+        }
+        // Rule 7: Disallow PEARL LbMsType for regular WebserviceConsumer (remains the same)
+        else if (!isPearlWebserviceConsumer && hasMsConsumer && msConsumerValue.contains("PEARL")) {
             logIfEnabled(project, log, "plugin.rules.non.pearl.consumer")
             holder.registerProblem(
-                annotationElement,
+                findHighlightElementForAttribute(annotationElement, "msConsumer") ?: annotationElement,
                 MyBundle.message("plugin.rules.non.pearl.consumer", "'PEARL' LbMsType is not allowed for WebserviceConsumer"),
-                ProblemHighlightType.ERROR // Changed to ERROR
+                ProblemHighlightType.ERROR
             )
         }
     }
+}
+
+private fun findHighlightElementForAttribute(annotationElement: PsiElement, attributeName: String): PsiElement? {
+    return when (annotationElement) {
+        is PsiAnnotation -> annotationElement.findAttributeValue(attributeName)
+        is KtAnnotationEntry -> annotationElement.valueArguments.find {
+            // CORRECTED PATH: ValueArgument -> ValueArgumentName -> Name -> String
+            it.getArgumentName()?.asName?.asString() == attributeName
+        }?.getArgumentExpression() // Get the expression (value) part of the argument
+        else -> null
+    } ?: annotationElement // Fallback to the whole annotation if attribute not found
 }
 
 // Java implementation
