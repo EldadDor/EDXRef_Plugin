@@ -28,7 +28,7 @@
     <extensions defaultExtensionNs="com.intellij">
         <localInspection
                 language="kotlin"
-                shortName="WSConsumerValidation"
+                shortName="WSConsumerValidationKotlin"
                 displayName="WSConsumer Annotation Validation"
                 groupName="Web Service Inspections"
                 groupPath="Web Services, WS Inspections"
@@ -37,7 +37,7 @@
                 implementationClass="com.github.edxref.inspection.WSConsumerKotlinInspection"/>
         <localInspection
                 language="JAVA"
-                shortName="WSConsumerValidation"
+                shortName="WSConsumerValidationJava"
                 displayName="WSConsumer annotation validation"
                 groupName="Web service inspections"
                 groupPath="Web services, WS inspections"
@@ -46,7 +46,7 @@
                 implementationClass="com.github.edxref.inspection.WSConsumerJavaInspection"/>
         <!-- NEW: Register WSInterfaceParamInspection -->
         <localInspection language="JAVA"
-                         shortName="WSInterfaceParamValidation"
+                         shortName="WSInterfaceParamValidationJava"
                          displayName="WSConsumer interface parameter validation"
                          groupName="Web service inspections"
                          groupPath="Web services, WS inspections"
@@ -54,7 +54,7 @@
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.WSInterfaceParamJavaInspection"/>
         <localInspection language="kotlin"
-                         shortName="WSInterfaceParamValidation"
+                         shortName="WSInterfaceParamValidationKotlin"
                          displayName="WSConsumer interface parameter validation"
                          groupName="Web service inspections"
                          groupPath="Web services, WS inspections"
