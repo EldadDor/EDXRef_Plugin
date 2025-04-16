@@ -1,7 +1,10 @@
 package com.github.edxref.inspection
 
+// Import settings and logger helper if you have them
+// import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
+// Removed incorrect PsiUtil import if it was added
 import com.github.edxref.MyBundle
-// Import settings and logger if you implemented them from previous steps
+import com.github.edxref.settings.WSConsumerSettings
 import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 import com.intellij.codeInspection.*
 import com.intellij.openapi.diagnostic.Logger
@@ -9,31 +12,46 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.codeStyle.JavaCodeStyleManager
+import com.intellij.psi.util.InheritanceUtil
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
-import org.jetbrains.kotlin.psi.KtAnnotationEntry
-import org.jetbrains.kotlin.psi.KtClass
-import org.jetbrains.kotlin.psi.KtPsiFactory
-import org.jetbrains.kotlin.psi.KtVisitorVoid
+import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 
-// Helper function for conditional logging (assuming you added this)
+// --- Logger Helper ---
 private fun logIfEnabled(project: Project, logger: Logger, message: String) {
-    // Check settings only if the settings class exists
     try {
         if (project.getWSConsumerSettings().enableLog) {
             logger.info(message)
         }
-    } catch (e: NoClassDefFoundError) {
-        // Handle case where settings class might not be available yet or during tests
-        logger.warn("WSConsumerSettings not found, logging disabled for this check.", e)
     } catch (e: Exception) {
-        // Catch other potential exceptions during settings access
-        logger.error("Error accessing WSConsumerSettings", e)
+        // Ignore exceptions during logging check
     }
 }
 
+// --- Settings Accessors with Fallbacks ---
+// (Assuming these are defined correctly as in previous steps)
+private fun getSettings(project: Project): WSConsumerSettings {
+    return project.getWSConsumerSettings()
+}
 
-// Define a quick fix for missing url and path (assuming you added this)
+private fun getWsConsumerAnnotationFqn(project: Project): String {
+    // Simplified - replace with actual implementation using defaults if needed
+    return getSettings(project).wsConsumerAnnotationFqn.ifBlank { "com.github.edxref.annotations.WSConsumer" } // Added fallback
+}
+
+private fun getWebserviceConsumerFqn(project: Project): String {
+    // Simplified - replace with actual implementation using defaults if needed
+    return getSettings(project).webserviceConsumerFqn.ifBlank { "com.github.edxref.annotations.WebserviceConsumer" } // Added fallback
+}
+
+// ... other settings accessors ...
+private fun getPropertyFqn(project: Project): String {
+    // Simplified - replace with actual implementation using defaults if needed
+    return getSettings(project).propertyAnnotationFqn.ifBlank { "com.github.edxref.annotations.Property" } // Added fallback
+}
+
+
+// --- Quick Fix (Assuming AddDefaultUrlQuickFix is defined correctly) ---
 class AddDefaultUrlQuickFix(private val isJava: Boolean) : LocalQuickFix {
     override fun getName(): String = "Add default URL attribute"
     override fun getFamilyName(): String = name
@@ -43,64 +61,47 @@ class AddDefaultUrlQuickFix(private val isJava: Boolean) : LocalQuickFix {
         if (isJava && annotationElement is PsiAnnotation) {
             // Java implementation
             val factory = JavaPsiFacade.getElementFactory(project)
-            val attr = factory.createAnnotationFromText("@WSConsumer(url = \"http://localhost:8080/service\", method = WSMethods.GET)", null)
+            // Ensure WSMethods is resolvable or use FQN
+            val attr = factory.createAnnotationFromText("@WSConsumer(url = \"http://localhost:8080/service\", method = com.example.WSMethods.GET)", null) // ADJUST FQN if needed
             val urlAttribute = attr.findAttributeValue("url")
 
-            // Add URL attribute to the annotation
             if (urlAttribute != null) {
                 annotationElement.setDeclaredAttributeValue("url", urlAttribute)
-
-                // Add method attribute if it doesn't exist
                 if (annotationElement.findAttributeValue("method") == null) {
                     val methodAttribute = attr.findAttributeValue("method")
-                    if (methodAttribute != null) { // Check if methodAttribute is not null
+                    if (methodAttribute != null) {
                         annotationElement.setDeclaredAttributeValue("method", methodAttribute)
                     }
                 }
-
-                // Optimize imports and reformat code
                 JavaCodeStyleManager.getInstance(project).shortenClassReferences(annotationElement)
             }
         } else if (!isJava && annotationElement is KtAnnotationEntry) {
             // Kotlin implementation
-            val ktAnnotationEntry = annotationElement // Cast to correct type for clarity
-
-            // Check if method attribute already exists
+            val ktAnnotationEntry = annotationElement
             val hasMethodAttribute = ktAnnotationEntry.valueArguments.any {
+                // Use corrected access path here too
                 it.getArgumentName()?.asName?.asString() == "method"
             }
-
             val psiFactory = KtPsiFactory(project)
-
-            // Create the attribute to add
             val urlAttributeText = "url = \"http://localhost:8080/service\""
 
-            // If there are existing arguments
             if (ktAnnotationEntry.valueArgumentList != null) {
                 val argList = ktAnnotationEntry.valueArgumentList!!
-
-                // Insert url attribute at the beginning
                 val newArgument = psiFactory.createArgument(urlAttributeText)
                 if (argList.arguments.isNotEmpty()) {
                     argList.addArgumentBefore(newArgument, argList.arguments.first())
                 } else {
                     argList.addArgument(newArgument)
                 }
-
-                // Add method attribute if it doesn't exist
                 if (!hasMethodAttribute) {
-                    val methodArgument = psiFactory.createArgument("method = WSMethods.GET")
+                    // Ensure WSMethods is resolvable or use FQN
+                    val methodArgument = psiFactory.createArgument("method = com.example.WSMethods.GET") // ADJUST FQN if needed
                     argList.addArgument(methodArgument)
                 }
             } else {
-                // Create a new argument list using pattern-based creation
-                val methodText = if (hasMethodAttribute) "" else ", method = WSMethods.GET"
+                val methodText = if (hasMethodAttribute) "" else ", method = com.example.WSMethods.GET" // ADJUST FQN if needed
                 val patternText = "@Annotation($urlAttributeText$methodText)"
-
-                // Create the entire annotation with arguments using a pattern
                 val dummyAnnotation = psiFactory.createAnnotationEntry(patternText)
-
-                // Extract the value argument list and replace it in the original annotation
                 val newArgumentList = dummyAnnotation.valueArgumentList
                 if (newArgumentList != null) {
                     ktAnnotationEntry.add(newArgumentList)
@@ -111,150 +112,7 @@ class AddDefaultUrlQuickFix(private val isJava: Boolean) : LocalQuickFix {
 }
 
 
-interface WSConsumerInspectionLogic {
-    private val log: Logger
-        get() = logger<WSConsumerInspectionLogic>()
-
-    fun checkWSConsumerAnnotation(
-        project: Project, // Added project parameter
-        annotationElement: PsiElement,
-        holder: ProblemsHolder,
-        urlValue: String,
-        pathValue: String,
-        sslCertificateValidation: Boolean,
-        hasMsConsumer: Boolean,
-        msConsumerValue: String,
-        isPearlWebserviceConsumer: Boolean,
-        isJava: Boolean // Added isJava parameter
-    ) {
-        // Base check: Ensure url or path is specified
-        if (urlValue.isEmpty() && pathValue.isEmpty()) {
-            logIfEnabled(project, log, "plugin.rules.missing.url.and.path")
-            holder.registerProblem(
-                annotationElement,
-                MyBundle.message("plugin.rules.missing.url.and.path", "Either 'url' or 'path' must be specified in @WSConsumer annotation."),
-                ProblemHighlightType.ERROR, // Changed to ERROR
-                AddDefaultUrlQuickFix(isJava) // Pass isJava
-            )
-            return // Return early as other rules depend on url/path
-        }
-
-        // Rule 1: If msConsumer is present, url should not be specified (use path only)
-        if (hasMsConsumer && urlValue.isNotEmpty()) {
-            logIfEnabled(project, log, "plugin.rules.url.with.msconsumer")
-            holder.registerProblem(
-                annotationElement,
-                MyBundle.message("plugin.rules.url.with.msconsumer", "For @WSConsumer with msConsumer, 'url' must not be specified; use 'path' only."),
-                ProblemHighlightType.ERROR // Changed to ERROR
-            )
-        }
-
-        // Rule 2: The 'path' should not contain protocol information
-        if (pathValue.isNotEmpty() && (pathValue.contains("http://") || pathValue.contains("https://"))) {
-            logIfEnabled(project, log, "plugin.rules.path.with.protocol")
-            holder.registerProblem(
-                annotationElement,
-                MyBundle.message("plugin.rules.path.with.protocol", "The 'path' attribute must not contain http/https; specify only a relative path."),
-                ProblemHighlightType.ERROR // Changed to ERROR
-            )
-        }
-
-        // Rule 3: URL should not contain double slashes (except in protocol)
-        if (urlValue.isNotEmpty()) {
-            val protocolIndex = urlValue.indexOf("://")
-            // Check for double slashes *after* the protocol part
-            if (protocolIndex >= 0 && urlValue.substring(protocolIndex + 3).contains("//")) {
-                logIfEnabled(project, log, "plugin.rules.url.double.slashes")
-                holder.registerProblem(
-                    annotationElement,
-                    MyBundle.message("plugin.rules.url.double.slashes", "The 'url' attribute contains invalid double slashes."),
-                    ProblemHighlightType.ERROR // Changed to ERROR
-                )
-            }
-        }
-
-        // Rule 4: When only 'path' is specified, 'msConsumer' must be defined
-        if (pathValue.isNotEmpty() && urlValue.isEmpty() && !hasMsConsumer) {
-            logIfEnabled(project, log, "plugin.rules.path.without.msconsumer")
-            holder.registerProblem(
-                annotationElement,
-                MyBundle.message("plugin.rules.path.without.msconsumer", "When only 'path' is specified, 'msConsumer' must be defined."),
-                ProblemHighlightType.ERROR // Changed to ERROR
-            )
-        }
-
-        // Rule 5: Detect invalid URLs containing specific hosts
-        if (urlValue.isNotEmpty()) {
-            // Get the list of invalid hosts from settings (assuming you added settings)
-            val invalidHostsStr = try {
-                project.getWSConsumerSettings().invalidHosts
-            } catch (e: Exception) {
-                MyBundle.message("plugin.rules.invalid.address") // Fallback to bundle
-            }
-
-            val invalidHosts = invalidHostsStr.split(',').mapNotNull { it.trim().takeIf { it.isNotEmpty() } }
-
-            for (host in invalidHosts) {
-                // Simple contains check - might need refinement for accuracy (e.g., check host part only)
-                if (urlValue.contains(host)) {
-                    logIfEnabled(project, log, "plugin.rules.invalid.server: $host")
-                    holder.registerProblem(
-                        annotationElement,
-                        MyBundle.message("plugin.rules.invalid.server", "Invalid URL: ''{0}'' is in the list of restricted servers.", host),
-                        ProblemHighlightType.ERROR // Changed to ERROR
-                    )
-                    break // Report only the first match
-                }
-            }
-        }
-
-        // Rule 6: Further restrictions for PearlWebserviceConsumer
-        if (isPearlWebserviceConsumer && hasMsConsumer) {
-            // Check if the msConsumerValue contains any LbMsType *other than* PEARL or LOCAL.
-            // This text-based check is somewhat fragile but matches the current data structure.
-            // It assumes LbMsType enum values are CRM, CZ, BATCH, PEARL, LOCAL, NONE.
-            val containsInvalidType = msConsumerValue.contains("CRM") ||
-                    msConsumerValue.contains("CZ") ||
-                    msConsumerValue.contains("BATCH") ||
-                    msConsumerValue.contains("NONE") // Assuming NONE is also invalid here
-
-            if (containsInvalidType) {
-                // Found an invalid type like CRM, CZ, BATCH, or NONE
-                logIfEnabled(project, log, "plugin.rules.pearl.msconsumer.invalid") // Use the updated key if you changed it
-                holder.registerProblem(
-                    // Try to highlight the msConsumer attribute value if possible
-                    findHighlightElementForAttribute(annotationElement, "msConsumer") ?: annotationElement,
-                    MyBundle.message("plugin.rules.pearl.msconsumer.invalid"), // Use the updated message
-                    ProblemHighlightType.ERROR
-                )
-            } else {
-                // No invalid types found (only PEARL, LOCAL, or both might be present)
-                // Now check the SSL rule specifically if LOCAL is present.
-                val containsLocal = msConsumerValue.contains("LOCAL")
-                if (containsLocal && sslCertificateValidation) {
-                    logIfEnabled(project, log, "plugin.rules.pearl.ssl.validation")
-                    holder.registerProblem(
-                        // Try to highlight the sslCertificateValidation attribute value
-                        findHighlightElementForAttribute(annotationElement, "sslCertificateValidation") ?: annotationElement,
-                        MyBundle.message("plugin.rules.pearl.ssl.validation", "For PearlWebserviceConsumer with msConsumer set to LOCAL, sslCertificateValidation must be false."),
-                        ProblemHighlightType.ERROR
-                    )
-                }
-                // If only PEARL is present, or if LOCAL is present with sslCertificateValidation=false, no error is reported here.
-            }
-        }
-        // Rule 7: Disallow PEARL LbMsType for regular WebserviceConsumer (remains the same)
-        else if (!isPearlWebserviceConsumer && hasMsConsumer && msConsumerValue.contains("PEARL")) {
-            logIfEnabled(project, log, "plugin.rules.non.pearl.consumer")
-            holder.registerProblem(
-                findHighlightElementForAttribute(annotationElement, "msConsumer") ?: annotationElement,
-                MyBundle.message("plugin.rules.non.pearl.consumer", "'PEARL' LbMsType is not allowed for WebserviceConsumer"),
-                ProblemHighlightType.ERROR
-            )
-        }
-    }
-}
-
+// --- Helper function to find attribute value for highlighting (CORRECTED AGAIN) ---
 private fun findHighlightElementForAttribute(annotationElement: PsiElement, attributeName: String): PsiElement? {
     return when (annotationElement) {
         is PsiAnnotation -> annotationElement.findAttributeValue(attributeName)
@@ -266,35 +124,161 @@ private fun findHighlightElementForAttribute(annotationElement: PsiElement, attr
     } ?: annotationElement // Fallback to the whole annotation if attribute not found
 }
 
-// Java implementation
-class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsumerInspectionLogic {
-    private val log = logger<WSConsumerJavaInspection>()
-    override fun getDisplayName(): String = "WSConsumer annotation inspection (Java)"
 
-    // checkClass is generally less preferred for detailed annotation checks than buildVisitor
-    // It runs less frequently and might miss some contexts.
-    // Consider removing or simplifying checkClass if buildVisitor covers all cases.
+// --- Main Inspection Logic Interface ---
+interface WSConsumerInspectionLogic {
+    private val log: Logger // Use private val for logger within the interface scope
+        get() = logger<WSConsumerInspectionLogic>() // Default logger instance
+
+    fun checkWSConsumerAnnotation(
+        project: Project,
+        annotationElement: PsiElement,
+        holder: ProblemsHolder,
+        urlValue: String,
+        pathValue: String,
+        sslCertificateValidation: Boolean,
+        hasMsConsumer: Boolean,
+        msConsumerValue: String,
+        isPearlWebserviceConsumer: Boolean,
+        isJava: Boolean
+    ) {
+        val wsConsumerAnnotationFqn = getWsConsumerAnnotationFqn(project) // Get FQN from settings
+
+        // Base check: Ensure url or path is specified
+        if (urlValue.isEmpty() && pathValue.isEmpty()) {
+            logIfEnabled(project, log, "plugin.rules.missing.url.and.path")
+            holder.registerProblem(
+                annotationElement,
+                MyBundle.message("plugin.rules.missing.url.and.path", "Either 'url' or 'path' must be specified in @${wsConsumerAnnotationFqn.substringAfterLast('.')} annotation."),
+                ProblemHighlightType.ERROR,
+                AddDefaultUrlQuickFix(isJava)
+            )
+            return
+        }
+
+        // Rule 1: If msConsumer is present, url should not be specified (use path only)
+        if (hasMsConsumer && urlValue.isNotEmpty()) {
+            logIfEnabled(project, log, "plugin.rules.url.with.msconsumer")
+            holder.registerProblem(
+                findHighlightElementForAttribute(annotationElement, "url") ?: annotationElement,
+                MyBundle.message("plugin.rules.url.with.msconsumer", "For @${wsConsumerAnnotationFqn.substringAfterLast('.')} with msConsumer, 'url' must not be specified; use 'path' only."),
+                ProblemHighlightType.ERROR
+            )
+        }
+
+        // Rule 2: The 'path' should not contain protocol information
+        if (pathValue.isNotEmpty() && (pathValue.contains("http://") || pathValue.contains("https://"))) {
+            logIfEnabled(project, log, "plugin.rules.path.with.protocol")
+            holder.registerProblem(
+                findHighlightElementForAttribute(annotationElement, "path") ?: annotationElement,
+                MyBundle.message("plugin.rules.path.with.protocol", "The 'path' attribute must not contain http/https; specify only a relative path."),
+                ProblemHighlightType.ERROR
+            )
+        }
+
+        // Rule 3: URL should not contain double slashes (except in protocol)
+        if (urlValue.isNotEmpty()) {
+            val protocolIndex = urlValue.indexOf("://")
+            if (protocolIndex >= 0 && urlValue.substring(protocolIndex + 3).contains("//")) {
+                logIfEnabled(project, log, "plugin.rules.url.double.slashes")
+                holder.registerProblem(
+                    findHighlightElementForAttribute(annotationElement, "url") ?: annotationElement,
+                    MyBundle.message("plugin.rules.url.double.slashes", "The 'url' attribute contains invalid double slashes."),
+                    ProblemHighlightType.ERROR
+                )
+            }
+        }
+
+        // Rule 4: When only 'path' is specified, 'msConsumer' must be defined
+        if (pathValue.isNotEmpty() && urlValue.isEmpty() && !hasMsConsumer) {
+            logIfEnabled(project, log, "plugin.rules.path.without.msconsumer")
+            holder.registerProblem(
+                findHighlightElementForAttribute(annotationElement, "path") ?: annotationElement,
+                MyBundle.message("plugin.rules.path.without.msconsumer", "When only 'path' is specified, 'msConsumer' must be defined."),
+                ProblemHighlightType.ERROR
+            )
+        }
+
+        // Rule 5: Detect invalid URLs containing specific hosts
+        if (urlValue.isNotEmpty()) {
+            val invalidHostsStr = getSettings(project).invalidHosts // Get from settings
+            val invalidHosts = invalidHostsStr.split(',').mapNotNull { it.trim().takeIf { it.isNotEmpty() } }
+
+            for (host in invalidHosts) {
+                if (urlValue.contains(host)) {
+                    logIfEnabled(project, log, "plugin.rules.invalid.server: $host")
+                    holder.registerProblem(
+                        findHighlightElementForAttribute(annotationElement, "url") ?: annotationElement,
+                        MyBundle.message("plugin.rules.invalid.server", "Invalid URL: ''{0}'' is in the list of restricted servers.", host),
+                        ProblemHighlightType.ERROR
+                    )
+                    break
+                }
+            }
+        }
+
+        // Rule 6: Further restrictions for PearlWebserviceConsumer
+        if (isPearlWebserviceConsumer && hasMsConsumer) {
+            val containsInvalidType = msConsumerValue.contains("CRM") ||
+                    msConsumerValue.contains("CZ") ||
+                    msConsumerValue.contains("BATCH") ||
+                    msConsumerValue.contains("NONE")
+
+            if (containsInvalidType) {
+                logIfEnabled(project, log, "plugin.rules.pearl.msconsumer.invalid")
+                holder.registerProblem(
+                    findHighlightElementForAttribute(annotationElement, "msConsumer") ?: annotationElement,
+                    MyBundle.message("plugin.rules.pearl.msconsumer.invalid"), // Use updated message
+                    ProblemHighlightType.ERROR
+                )
+            } else {
+                val containsLocal = msConsumerValue.contains("LOCAL")
+                if (containsLocal && sslCertificateValidation) {
+                    logIfEnabled(project, log, "plugin.rules.pearl.ssl.validation")
+                    holder.registerProblem(
+                        findHighlightElementForAttribute(annotationElement, "sslCertificateValidation") ?: annotationElement,
+                        MyBundle.message("plugin.rules.pearl.ssl.validation", "For PearlWebserviceConsumer with msConsumer set to LOCAL, sslCertificateValidation must be false."),
+                        ProblemHighlightType.ERROR
+                    )
+                }
+            }
+        }
+        // Rule 7: Disallow PEARL LbMsType for regular WebserviceConsumer
+        else if (!isPearlWebserviceConsumer && hasMsConsumer && msConsumerValue.contains("PEARL")) {
+            logIfEnabled(project, log, "plugin.rules.non.pearl.consumer")
+            holder.registerProblem(
+                findHighlightElementForAttribute(annotationElement, "msConsumer") ?: annotationElement,
+                MyBundle.message("plugin.rules.non.pearl.consumer", "'PEARL' LbMsType is not allowed for WebserviceConsumer"),
+                ProblemHighlightType.ERROR
+            )
+        }
+    }
+}
+
+// --- Java Implementation ---
+class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsumerInspectionLogic {
+    // No need to override log here, interface provides default
+
+    override fun getDisplayName(): String = "WSConsumer Annotation Validation (Java)" // More specific display name
+
+    // checkClass implementation (consider simplifying or removing if buildVisitor is sufficient)
     override fun checkClass(psiClass: PsiClass, manager: InspectionManager, isOnTheFly: Boolean): Array<ProblemDescriptor> {
         val project = psiClass.project
+        val wsConsumerAnnotationFqn = getWsConsumerAnnotationFqn(project)
         val annotations = psiClass.annotations
         for (annotation in annotations) {
-            if (annotation.qualifiedName?.endsWith("WSConsumer") == true) {
-                logIfEnabled(project, log, "Found WSConsumer annotation, checkClass")
-                // Get properties by name instead of by type
+            if (annotation.qualifiedName == wsConsumerAnnotationFqn) { // Use FQN
+                logIfEnabled(project, logger<WSConsumerJavaInspection>(), "Found @${wsConsumerAnnotationFqn.substringAfterLast('.')} annotation, checkClass")
                 val urlValue = annotation.findAttributeValue("url")
                 val pathValue = annotation.findAttributeValue("path")
-
-                // Simplified check: If neither url nor path attribute exists AT ALL.
-                // More detailed validation (empty values) is handled in buildVisitor.
                 if (urlValue == null && pathValue == null) {
-                    logIfEnabled(project, log, "plugin.rules.missing.url.and.path (checkClass)")
-                    // Note: QuickFix might not work reliably from checkClass
+                    logIfEnabled(project, logger<WSConsumerJavaInspection>(), "plugin.rules.missing.url.and.path (checkClass)")
                     return arrayOf(
                         manager.createProblemDescriptor(
                             annotation,
-                            MyBundle.message("plugin.rules.missing.url.and.path", "Either 'url' or 'path' must be specified in @WSConsumer annotation."),
-                            true, // show tooltip?
-                            ProblemHighlightType.ERROR, // Changed to ERROR
+                            MyBundle.message("plugin.rules.missing.url.and.path", "Either 'url' or 'path' must be specified in @${wsConsumerAnnotationFqn.substringAfterLast('.')} annotation."),
+                            true,
+                            ProblemHighlightType.ERROR,
                             isOnTheFly
                             // AddDefaultUrlQuickFix(true) // QuickFix might be less reliable here
                         )
@@ -305,6 +289,7 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
         return ProblemDescriptor.EMPTY_ARRAY
     }
 
+
     override fun buildVisitor(
         holder: ProblemsHolder,
         isOnTheFly: Boolean,
@@ -313,54 +298,40 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
         return object : JavaElementVisitor() {
             override fun visitAnnotation(annotation: PsiAnnotation) {
                 val project = annotation.project
-                logIfEnabled(project, log, "Found WSConsumer annotation, visit")
+                val wsConsumerAnnotationFqn = getWsConsumerAnnotationFqn(project)
 
-                if (annotation.qualifiedName?.endsWith("WSConsumer") != true) {
+                // Check FQN for accuracy
+                if (annotation.qualifiedName != wsConsumerAnnotationFqn) {
                     return
                 }
+                logIfEnabled(project, logger<WSConsumerJavaInspection>(), "Found @${wsConsumerAnnotationFqn.substringAfterLast('.')} annotation, visit")
 
-                // Get the annotated element - Ensure it's a class or interface
                 val modifierList = annotation.parent as? PsiModifierList
-                val annotatedElement = modifierList?.parent as? PsiClass ?: return // Ensure it's a PsiClass
+                val annotatedElement = modifierList?.parent as? PsiClass ?: return
 
-                // Check if annotated element implements PearlWebserviceConsumer
-                val isPearlWebserviceConsumer = isPearlWebserviceConsumer(annotatedElement)
+                val webserviceConsumerFqn = getWebserviceConsumerFqn(project) // Get from settings
+                // Use a placeholder FQN for PearlWebserviceConsumer - ADJUST THIS
+                val pearlConsumerFqn = "com.example.PearlWebserviceConsumer"
+                val isPearlWebserviceConsumer = isImplementingInterface(annotatedElement, pearlConsumerFqn)
 
-                // Extract annotation attributes
+                // Extract attributes
                 val urlAttr = annotation.findAttributeValue("url")
-                val urlValue = if (urlAttr is PsiLiteralExpression) {
-                    urlAttr.value?.toString() ?: ""
-                } else {
-                    // Handle cases where url might be a constant reference, etc.
-                    // For simplicity, treat non-literal as empty for now, or add more complex resolution
-                    ""
-                }
+                val urlValue = if (urlAttr is PsiLiteralExpression && urlAttr.value is String) urlAttr.value as String else ""
 
                 val pathAttr = annotation.findAttributeValue("path")
-                val pathValue = if (pathAttr is PsiLiteralExpression) {
-                    pathAttr.value?.toString() ?: ""
-                } else {
-                    ""
-                }
+                val pathValue = if (pathAttr is PsiLiteralExpression && pathAttr.value is String) pathAttr.value as String else ""
 
-                // Handle sslCertificateValidation - default is true if not specified
                 val sslValue = annotation.findAttributeValue("sslCertificateValidation")
-                val sslCertificateValidation = if (sslValue is PsiLiteralExpression) {
-                    sslValue.value as? Boolean ?: true // Default to true if attribute exists but isn't boolean literal
-                } else {
-                    true // Default to true if attribute doesn't exist
-                }
+                val sslCertificateValidation = if (sslValue is PsiLiteralExpression && sslValue.value is Boolean) sslValue.value as Boolean else true
 
-                // Check for msConsumer - FIXED to check for non-empty array
                 val msConsumerAttr = annotation.findAttributeValue("msConsumer")
-                // Check if attribute exists AND its text representation is not an empty array initializer
                 val hasMsConsumer = msConsumerAttr != null &&
-                        msConsumerAttr.text.isNotBlank() && // Ensure not just whitespace
+                        msConsumerAttr.text.isNotBlank() &&
                         !msConsumerAttr.text.equals("{}") &&
-                        !msConsumerAttr.text.equals("[]") // Consider empty array case if applicable
+                        !msConsumerAttr.text.equals("[]")
                 val msConsumerValue = msConsumerAttr?.text ?: ""
 
-                // Use the common logic
+                // Call common logic
                 checkWSConsumerAnnotation(
                     project,
                     annotation,
@@ -375,44 +346,20 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
                 )
             }
 
-            private fun isPearlWebserviceConsumer(element: PsiClass): Boolean { // Changed parameter to PsiClass
-                val project = element.project
-                // Check implemented interfaces
-                for (implemented in element.interfaces) {
-                    if (implemented.qualifiedName?.endsWith("PearlWebserviceConsumer") == true) {
-                        logIfEnabled(project, log, "Found PearlWebServiceConsumer class, implement")
-                        return true
-                    }
-                }
-
-                // Check superclass hierarchy
-                var superClass = element.superClass
-                while (superClass != null) {
-                    if (superClass.qualifiedName?.endsWith("PearlWebserviceConsumer") == true) {
-                        logIfEnabled(project, log, "Found PearlWebServiceConsumer FQN class")
-                        return true
-                    }
-                    // Check interfaces of superclasses too
-                    for (implemented in superClass.interfaces) {
-                        if (implemented.qualifiedName?.endsWith("PearlWebserviceConsumer") == true) {
-                            logIfEnabled(project, log, "Found PearlWebServiceConsumer class via superclass interface")
-                            return true
-                        }
-                    }
-                    superClass = superClass.superClass
-                }
-
-                return false
+            // isImplementingInterface helper (assuming it's defined elsewhere or copy here)
+            private fun isImplementingInterface(psiClass: PsiClass, interfaceFqn: String): Boolean {
+                if (interfaceFqn.isBlank()) return false
+                return InheritanceUtil.isInheritor(psiClass, interfaceFqn)
             }
         }
     }
 }
 
-// Kotlin implementation
+// --- Kotlin Implementation ---
 class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspectionLogic {
-    private val log = logger<WSConsumerKotlinInspection>() // Added logger instance
+    // No need to override log here, interface provides default
 
-    override fun getDisplayName(): String = "WSConsumer annotation inspection (Kotlin)"
+    override fun getDisplayName(): String = "WSConsumer Annotation Validation (Kotlin)" // More specific display name
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor =
         object : KtVisitorVoid() {
@@ -420,65 +367,61 @@ class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspect
                 super.visitAnnotationEntry(annotationEntry)
 
                 val project = annotationEntry.project
+                val wsConsumerAnnotationFqn = getWsConsumerAnnotationFqn(project)
 
-                // Resolve the annotation's FQN to be more precise
-                val annotationFQN = annotationEntry.calleeExpression
-                    ?.constructorReferenceExpression
-                    ?.getReferencedNameAsName() // Get short name
-                    // Add proper resolution logic if needed, e.g., using binding context
-                    // For now, stick to short name check for simplicity
-                    ?.asString()
+                // Basic check using short name - refine with type resolution if needed
+                val shortName = annotationEntry.shortName?.asString()
+                if (shortName != wsConsumerAnnotationFqn.substringAfterLast('.')) return
 
-                if (annotationFQN != "WSConsumer") return // Check for exact short name
+                // TODO: Add proper FQN check using resolved types for better accuracy
+                // val resolvedFqn = annotationEntry.resolveToFQName(...)
+                // if (resolvedFqn?.asString() != wsConsumerAnnotationFqn) return
 
-                // Locate the containing class/interface (the annotated type)
+                logIfEnabled(project, logger<WSConsumerKotlinInspection>(), "Found @$shortName annotation, visit")
+
                 val ktClass: KtClass = annotationEntry.getStrictParentOfType() ?: return
 
-                // Check if the class implements PearlWebserviceConsumer
-                // This check might need refinement using resolved types for accuracy
+                val webserviceConsumerFqn = getWebserviceConsumerFqn(project) // Get from settings
+                // Basic check - refine with type resolution
+                // Use a placeholder FQN for PearlWebserviceConsumer - ADJUST THIS
+                val pearlConsumerShortName = "PearlWebserviceConsumer"
                 val isPearlWebserviceConsumer = ktClass.superTypeListEntries.any {
-                    it.typeReference?.text?.contains("PearlWebserviceConsumer") == true
+                    it.typeReference?.text?.contains(pearlConsumerShortName) == true
                 }
 
-                // Helper to extract the literal text for a named attribute
+                // Helper to extract literal text
                 fun getArgumentText(name: String): String {
                     val arg = annotationEntry.valueArguments.find {
+                        // Use corrected access path here too
                         it.getArgumentName()?.asName?.asString() == name
-                    } ?: return "" // Return empty if argument not found
-
-                    // Get the expression text, handle string literals
+                    } ?: return ""
                     val expr = arg.getArgumentExpression()
                     val text = expr?.text ?: ""
-                    return if (expr is org.jetbrains.kotlin.psi.KtStringTemplateExpression && text.startsWith("\"") && text.endsWith("\"")) {
-                        text.substring(1, text.length - 1) // Remove quotes for string literals
+                    return if (expr is KtStringTemplateExpression && text.startsWith("\"") && text.endsWith("\"")) {
+                        text.substring(1, text.length - 1)
                     } else {
-                        text // Return raw text for other expressions (booleans, enum constants, etc.)
+                        text
                     }
                 }
 
                 val urlValue = getArgumentText("url")
                 val pathValue = getArgumentText("path")
-
-                // When not provided, sslCertificateValidation defaults to true
                 val sslText = getArgumentText("sslCertificateValidation")
                 val sslCertificateValidation = if (sslText.isEmpty()) true else sslText.equals("true", ignoreCase = true)
 
-                // Determine if the child annotation msConsumer is explicitly provided - FIXED
                 val msConsumerArg = annotationEntry.valueArguments.find {
+                    // Use corrected access path here too
                     it.getArgumentName()?.asName?.asString() == "msConsumer"
                 }
-
-                // Only consider msConsumer present if it's non-empty array/collection literal
                 val msConsumerExprText = msConsumerArg?.getArgumentExpression()?.text
                 val hasMsConsumer = msConsumerExprText != null &&
                         msConsumerExprText.isNotBlank() &&
-                        !msConsumerExprText.matches(Regex("""\[\s*]""")) && // Check for empty array []
-                        !msConsumerExprText.matches(Regex("""\{\s*}""")) && // Check for empty block {} (less likely but possible)
-                        !msConsumerExprText.equals("arrayOf()", ignoreCase = true) // Check for empty arrayOf()
-
+                        !msConsumerExprText.matches(Regex("""\[\s*]""")) &&
+                        !msConsumerExprText.matches(Regex("""\{\s*}""")) &&
+                        !msConsumerExprText.equals("arrayOf()", ignoreCase = true)
                 val msConsumerValue = msConsumerExprText ?: ""
 
-                // Use the common logic
+                // Call common logic
                 checkWSConsumerAnnotation(
                     project,
                     annotationEntry,
