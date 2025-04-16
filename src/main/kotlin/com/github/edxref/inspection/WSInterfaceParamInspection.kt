@@ -265,52 +265,71 @@ interface WSInterfaceParamInspectionLogic {
      * Validates that only one getter is marked with isBodyParam=true when required.
      * Requires wsConsumerAnnotation for highlighting context.
      */
+    /**
+     * Validates getter rules for GET/POST/PUT methods.
+     * If getters exist, exactly one must be marked with isBodyParam=true.
+     * Requires wsConsumerAnnotation for highlighting context.
+     */
     private fun validateGettersForBodyParam(
         project: Project,
         psiClass: PsiClass,
-        wsConsumerAnnotation: PsiAnnotation, // Receive the annotation
+        wsConsumerAnnotation: PsiAnnotation, // Receive the annotation for context
         holder: ProblemsHolder
     ) {
         val wsParamFqn = getWsParamFqn(project)
+        // Find all methods starting with "get" and having no parameters
         val getters = psiClass.methods.filter { it.name.startsWith("get") && it.parameterList.parametersCount == 0 }
-        val bodyParamGetters = getters.filter { method ->
-            val wsParamAnnotation = method.getAnnotation(wsParamFqn)
-            val isBodyParamAttr = wsParamAnnotation?.findAttributeValue("isBodyParam")
-            (isBodyParamAttr is PsiLiteralExpression && isBodyParamAttr.value == true) || isBodyParamAttr?.text == "true"
-        }
 
-        // Use wsConsumerAnnotation to find the 'method' attribute for highlighting
-        val highlightElement = wsConsumerAnnotation.findAttributeValue("method") ?: psiClass.nameIdentifier ?: psiClass
-
-        when (bodyParamGetters.size) {
-            0 -> {
-                logIfEnabled(project, log, "ERROR: No getter marked with isBodyParam=true in ${psiClass.name}")
-                holder.registerProblem(
-                    highlightElement,
-                    MyBundle.message("inspection.wsinterfaceparam.error.missing.bodyparam"),
-                    ProblemHighlightType.ERROR
-                )
+        // Only apply the rule if getters actually exist in the interface
+        if (getters.isNotEmpty()) {
+            // Find which of the existing getters are marked as the body parameter
+            val bodyParamGetters = getters.filter { method ->
+                val wsParamAnnotation = method.getAnnotation(wsParamFqn)
+                val isBodyParamAttr = wsParamAnnotation?.findAttributeValue("isBodyParam")
+                // Check for literal `true` or text "true"
+                (isBodyParamAttr is PsiLiteralExpression && isBodyParamAttr.value == true) || isBodyParamAttr?.text == "true"
             }
 
-            1 -> {
-                logIfEnabled(project, log, "OK: Found exactly one getter marked with isBodyParam=true in ${psiClass.name}")
-            }
+            // Determine the element to highlight for class-level errors (missing/multiple)
+            // Prefer highlighting the 'method' attribute if possible
+            val highlightElementForClassError = wsConsumerAnnotation.findAttributeValue("method") ?: psiClass.nameIdentifier ?: psiClass
 
-            else -> { // More than 1
-                logIfEnabled(project, log, "ERROR: Multiple getters marked with isBodyParam=true in ${psiClass.name}")
-                holder.registerProblem(
-                    highlightElement,
-                    MyBundle.message("inspection.wsinterfaceparam.error.missing.bodyparam"),
-                    ProblemHighlightType.ERROR
-                )
-                bodyParamGetters.forEach { getter ->
+            when (bodyParamGetters.size) {
+                0 -> {
+                    // Rule broken: Getters exist, but none are marked as body param
+                    logIfEnabled(project, log, "ERROR: Getters exist but none marked with isBodyParam=true in ${psiClass.name}")
                     holder.registerProblem(
-                        getter.nameIdentifier ?: getter,
-                        "Multiple getters marked with isBodyParam=true.",
+                        highlightElementForClassError, // Highlight method attribute or class
+                        MyBundle.message("inspection.wsinterfaceparam.error.bodyparam.required"),
                         ProblemHighlightType.ERROR
                     )
                 }
+                1 -> {
+                    // Correct case: Exactly one getter marked.
+                    logIfEnabled(project, log, "OK: Found exactly one getter marked with isBodyParam=true in ${psiClass.name}")
+                    // No problem to report.
+                }
+                else -> { // More than 1
+                    // Rule broken: Too many getters marked as body param
+                    logIfEnabled(project, log, "ERROR: Multiple getters marked with isBodyParam=true in ${psiClass.name}")
+                    holder.registerProblem(
+                        highlightElementForClassError, // Highlight method attribute or class
+                        MyBundle.message("inspection.wsinterfaceparam.error.multiple.bodyparam"),
+                        ProblemHighlightType.ERROR
+                    )
+                    // Additionally, highlight each offending getter
+                    bodyParamGetters.forEach { getter ->
+                        holder.registerProblem(
+                            getter.nameIdentifier ?: getter, // Highlight the getter name
+                            MyBundle.message("inspection.wsinterfaceparam.error.multiple.bodyparam"), // Can reuse message or make specific
+                            ProblemHighlightType.ERROR
+                        )
+                    }
+                }
             }
+        } else {
+            // No getters exist in the interface, which is valid for GET/POST/PUT (no body expected from interface definition)
+            logIfEnabled(project, log, "OK: No getters found in ${psiClass.name}, skipping isBodyParam check.")
         }
     }
 
