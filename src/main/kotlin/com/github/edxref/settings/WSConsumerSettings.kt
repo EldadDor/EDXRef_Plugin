@@ -19,6 +19,7 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
         var invalidHosts: String = "msdevcz,msdevcrm,msdevbatch", // Default value
         var wsConsumerAnnotationFqn: String = "com.github.edxref.annotations.WSConsumer",
         var webserviceConsumerFqn: String = "com.github.edxref.annotations.WebserviceConsumer",
+        var pearlWebserviceConsumerFqn: String = "com.github.edxref.annotations.PearlWebserviceConsumer",
         var wsParamAnnotationFqn: String = "com.github.edxref.annotations.WSParam",
         var propertyAnnotationFqn: String = "com.github.edxref.annotations.Property"
     )
@@ -54,6 +55,12 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
         get() = state.webserviceConsumerFqn
         set(value) {
             state.webserviceConsumerFqn = value
+        }
+
+    var pearlWebserviceConsumerFqn: String
+        get() = state.pearlWebserviceConsumerFqn
+        set(value) {
+            state.pearlWebserviceConsumerFqn = value
         }
 
     var wsParamAnnotationFqn: String

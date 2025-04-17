@@ -20,6 +20,7 @@ class WSConsumerSettingsConfigurable : Configurable {
                 settingsComponent!!.invalidHosts != settings.invalidHosts ||
                 settingsComponent!!.wsConsumerAnnotationFqn != settings.wsConsumerAnnotationFqn ||
                 settingsComponent!!.webserviceConsumerFqn != settings.webserviceConsumerFqn ||
+                settingsComponent!!.pearlWebserviceConsumerFqn != settings.pearlWebserviceConsumerFqn ||
                 settingsComponent!!.wsParamAnnotationFqn != settings.wsParamAnnotationFqn ||
                 settingsComponent!!.propertyAnnotationFqn != settings.propertyAnnotationFqn
     }
@@ -30,6 +31,7 @@ class WSConsumerSettingsConfigurable : Configurable {
         settings.invalidHosts = settingsComponent!!.invalidHosts
         settings.wsConsumerAnnotationFqn = settingsComponent!!.wsConsumerAnnotationFqn
         settings.webserviceConsumerFqn = settingsComponent!!.webserviceConsumerFqn
+        settings.pearlWebserviceConsumerFqn = settingsComponent!!.pearlWebserviceConsumerFqn
         settings.wsParamAnnotationFqn = settingsComponent!!.wsParamAnnotationFqn
         settings.propertyAnnotationFqn = settingsComponent!!.propertyAnnotationFqn
     }
@@ -40,6 +42,7 @@ class WSConsumerSettingsConfigurable : Configurable {
         settingsComponent!!.invalidHosts = settings.invalidHosts
         settingsComponent!!.wsConsumerAnnotationFqn = settings.wsConsumerAnnotationFqn
         settingsComponent!!.webserviceConsumerFqn = settings.webserviceConsumerFqn
+        settingsComponent!!.pearlWebserviceConsumerFqn = settings.pearlWebserviceConsumerFqn
         settingsComponent!!.wsParamAnnotationFqn = settings.wsParamAnnotationFqn
         settingsComponent!!.propertyAnnotationFqn = settings.propertyAnnotationFqn
     }

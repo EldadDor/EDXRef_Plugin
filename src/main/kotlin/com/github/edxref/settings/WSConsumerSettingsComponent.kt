@@ -18,6 +18,7 @@ class WSConsumerSettingsComponent {
     private val invalidHostsField = JBTextField()
     private val wsConsumerAnnotationField = JBTextField()
     private val webserviceConsumerField = JBTextField()
+    private val pearlWebserviceConsumerField = JBTextField()
     private val wsParamAnnotationField = JBTextField()
     private val propertyAnnotationField = JBTextField()
 
@@ -27,6 +28,7 @@ class WSConsumerSettingsComponent {
         .addLabeledComponent(JBLabel("Invalid hosts (comma separated):"), invalidHostsField, 1, false)
         .addLabeledComponent(JBLabel("WSConsumer Annotation FQN:"), wsConsumerAnnotationField, 1, false)
         .addLabeledComponent(JBLabel("WebserviceConsumer Interface FQN:"), webserviceConsumerField, 1, false)
+        .addLabeledComponent(JBLabel("PearlWebserviceConsumer class FQN:"), pearlWebserviceConsumerField, 1, false)
         .addLabeledComponent(JBLabel("WSParam Annotation FQN:"), wsParamAnnotationField, 1, false)
         .addLabeledComponent(JBLabel("Property Annotation FQN:"), propertyAnnotationField, 1, false)
         .addComponentFillVertically(JPanel(), 0)
@@ -55,6 +57,12 @@ class WSConsumerSettingsComponent {
         get() = webserviceConsumerField.text
         set(value) {
             webserviceConsumerField.text = value
+        }
+
+    var pearlWebserviceConsumerFqn: String
+        get() = pearlWebserviceConsumerField.text
+        set(value) {
+            pearlWebserviceConsumerField.text = value
         }
 
     var wsParamAnnotationFqn: String

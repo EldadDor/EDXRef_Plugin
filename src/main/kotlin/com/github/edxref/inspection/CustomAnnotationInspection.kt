@@ -44,6 +44,11 @@ private fun getWebserviceConsumerFqn(project: Project): String {
     return getSettings(project).webserviceConsumerFqn.ifBlank { "com.github.edxref.annotations.WebserviceConsumer" } // Added fallback
 }
 
+private fun getPearlWebserviceConsumerFqn(project: Project): String {
+    // Simplified - replace with actual implementation using defaults if needed
+    return getSettings(project).pearlWebserviceConsumerFqn.ifBlank { "com.github.edxref.annotations.PearlWebserviceConsumer" } // Added fallback
+}
+
 // ... other settings accessors ...
 private fun getPropertyFqn(project: Project): String {
     // Simplified - replace with actual implementation using defaults if needed
@@ -311,7 +316,7 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
 
                 val webserviceConsumerFqn = getWebserviceConsumerFqn(project) // Get from settings
                 // Use a placeholder FQN for PearlWebserviceConsumer - ADJUST THIS
-                val pearlConsumerFqn = "com.example.PearlWebserviceConsumer"
+                val pearlConsumerFqn = getPearlWebserviceConsumerFqn(project)
                 val isPearlWebserviceConsumer = isImplementingInterface(annotatedElement, pearlConsumerFqn)
 
                 // Extract attributes
