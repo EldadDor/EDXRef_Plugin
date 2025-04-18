@@ -44,23 +44,42 @@
                 enabledByDefault="true"
                 level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSConsumerJavaInspection"/>
+        <localInspection
+                language="JAVA"
+                shortName="WSClassParamValidation"
+                displayName="WSConsumer Class Parameter Validation (Pearl)"
+                groupName="Custom Validations"
+                enabledByDefault="true"
+                level="ERROR"
+                implementationClass="com.github.edxref.inspection.WSClassParamJavaInspection"/>
+        <localInspection
+                language="kotlin"
+                shortName="WSClassParamValidation"
+                displayName="WSConsumer Class Parameter Validation (Pearl)"
+                groupName="Custom Validations"
+                enabledByDefault="true"
+                level="ERROR"
+                implementationClass="com.github.edxref.inspection.WSClassParamKotlinInspection"/>
         <!-- NEW: Register WSInterfaceParamInspection -->
-        <localInspection language="JAVA"
-                         shortName="WSInterfaceParamValidationJava"
-                         displayName="WSConsumer interface parameter validation"
-                         groupName="Web service inspections"
-                         groupPath="Web services, WS inspections"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSInterfaceParamJavaInspection"/>
-        <localInspection language="kotlin"
-                         shortName="WSInterfaceParamValidationKotlin"
-                         displayName="WSConsumer interface parameter validation"
-                         groupName="Web service inspections"
-                         groupPath="Web services, WS inspections"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
+        <localInspection
+                language="JAVA"
+                shortName="WSInterfaceParamValidationJava"
+                displayName="WSConsumer interface parameter validation"
+                groupName="Web service inspections"
+                groupPath="Web services, WS inspections"
+                enabledByDefault="true"
+                level="ERROR"
+                implementationClass="com.github.edxref.inspection.WSInterfaceParamJavaInspection"/>
+        <localInspection
+                language="kotlin"
+                shortName="WSInterfaceParamValidationKotlin"
+                displayName="WSConsumer interface parameter validation"
+                groupName="Web service inspections"
+                groupPath="Web services, WS inspections"
+                enabledByDefault="true"
+                level="ERROR"
+                implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
+
         <!--        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>-->
         <projectConfigurable
                 id="com.github.edxref.settings.WSConsumerSettingsConfigurable"
