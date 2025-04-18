@@ -14,23 +14,25 @@ import com.intellij.openapi.project.Project
 class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
 
     // Inner data class to hold the state
+
     data class State(
         var enableLog: Boolean = false,
-        var invalidHosts: String = "msdevcz,msdevcrm,msdevbatch", // Default value
+        var invalidHosts: String = "msdevcz,msdevcrm,msdevbatch",
         var wsConsumerAnnotationFqn: String = "com.github.edxref.annotations.WSConsumer",
         var webserviceConsumerFqn: String = "com.github.edxref.annotations.WebserviceConsumer",
         var pearlWebserviceConsumerFqn: String = "com.github.edxref.annotations.PearlWebserviceConsumer",
         var wsParamAnnotationFqn: String = "com.github.edxref.annotations.WSParam",
-        var propertyAnnotationFqn: String = "com.github.edxref.annotations.Property"
+        var propertyAnnotationFqn: String = "com.github.edxref.annotations.Property",
+        var validatePropertyAnnotations: Boolean = true, // Keep for interface inspection
+        var httpRequestAnnotationFqn: String = "com.github.edxref.annotations.HttpRequest" // New setting
     )
 
     private var state = State()
-
     override fun getState(): State = state
-
     override fun loadState(state: State) {
         this.state = state
     }
+
 
     // Helper properties to access settings
     var enableLog: Boolean
@@ -74,6 +76,15 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
         set(value) {
             state.propertyAnnotationFqn = value
         }
+    var validatePropertyAnnotations: Boolean
+        get() = state.validatePropertyAnnotations
+        set(value) {
+            state.validatePropertyAnnotations = value
+        }
+    var httpRequestAnnotationFqn: String // New getter/setter
+        get() = state.httpRequestAnnotationFqn
+        set(value) { state.httpRequestAnnotationFqn = value }
+
 
     companion object {
         // Extension function to get the service from a Project

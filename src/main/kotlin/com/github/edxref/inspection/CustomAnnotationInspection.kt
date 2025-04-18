@@ -366,6 +366,8 @@ class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspect
 
     override fun getDisplayName(): String = "WSConsumer Annotation Validation (Kotlin)" // More specific display name
 
+    override fun getStaticDescription(): String = "Validates proper usage of @WSConsumer annotation in Kotlin code, checking URL/path specifications, SSL settings, and msConsumer configuration"
+
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor =
         object : KtVisitorVoid() {
             override fun visitAnnotationEntry(annotationEntry: KtAnnotationEntry) {

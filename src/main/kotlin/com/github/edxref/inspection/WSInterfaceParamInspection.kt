@@ -197,39 +197,42 @@ interface WSInterfaceParamInspectionLogic {
         val propertyAnnotationShortName = propertyAnnotationFqn.substringAfterLast('.')
         val wsParamFqn = getWsParamFqn(project)
 
-        for (method in psiClass.methods) { // Check only methods declared directly in this interface
-            // Check if it looks like a setter
-            if (!method.name.startsWith("set") || method.parameterList.parametersCount != 1) {
-                continue
+        // Check if validation for @Property annotations is enabled
+        val validatePropertyAnnotations = getSettings(project).validatePropertyAnnotations
+
+        for (method in psiClass.methods) {
+            // Check if it looks like a setter or getter
+            val isSetter = method.name.startsWith("set") && method.parameterList.parametersCount == 1
+            val isGetter = method.name.startsWith("get") && method.parameterList.parametersCount == 0
+
+            if (isSetter || isGetter) {
+                // Validate @Property annotation if enabled
+                if (validatePropertyAnnotations && method.getAnnotation(propertyAnnotationFqn) == null) {
+                    logIfEnabled(project, log, "ERROR: Method '${method.name}' is missing the @$propertyAnnotationShortName annotation.")
+                    holder.registerProblem(
+                        method.nameIdentifier ?: method,
+                        MyBundle.message("inspection.wsinterfaceparam.error.missing.property.annotation", method.name, propertyAnnotationShortName),
+                        ProblemHighlightType.ERROR
+                    )
+                }
             }
 
-            // Check for @Property annotation
-            if (method.getAnnotation(propertyAnnotationFqn) == null) {
-                logIfEnabled(project, log, "ERROR: Setter method '${method.name}' is missing the @$propertyAnnotationShortName annotation.")
-                holder.registerProblem(
-                    method.nameIdentifier ?: method,
-                    MyBundle.message("inspection.wsinterfaceparam.error.missing.property.annotation", method.name, propertyAnnotationShortName),
-                    ProblemHighlightType.ERROR
-                )
-                // Continue processing other rules even if @Property is missing
-            }
+            // Process setters for parameter mapping
+            if (isSetter) {
+                val effectiveName = getEffectiveParamName(method)
+                if (effectiveName != null) {
+                    methodParamMap.computeIfAbsent(effectiveName) { mutableListOf() }.add(method)
 
-            // Get effective name and map it
-            val effectiveName = getEffectiveParamName(method)
-            if (effectiveName != null) {
-                methodParamMap.computeIfAbsent(effectiveName) { mutableListOf() }.add(method)
-
-                // Store methods with explicit @WSParam names
-                val wsParamAnnotation = method.getAnnotation(wsParamFqn)
-                if (wsParamAnnotation != null) {
-                    val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
-                    val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
-                        nameAttrValue.value as String
-                    } else {
-                        null
-                    }
-                    if (!explicitName.isNullOrBlank()) {
-                        methodsWithExplicitWsParamName[method] = explicitName
+                    // Store methods with explicit @WSParam names
+                    val wsParamAnnotation = method.getAnnotation(wsParamFqn)
+                    if (wsParamAnnotation != null) {
+                        val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
+                        val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
+                            nameAttrValue.value as String
+                        } else { null }
+                        if (!explicitName.isNullOrBlank()) {
+                            methodsWithExplicitWsParamName[method] = explicitName
+                        }
                     }
                 }
             }
@@ -400,6 +403,7 @@ interface WSInterfaceParamInspectionLogic {
 class WSInterfaceParamJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSInterfaceParamInspectionLogic {
     override val log = logger<WSInterfaceParamJavaInspection>()
     override fun getDisplayName(): String = MyBundle.message("inspection.wsinterfaceparam.displayname")
+    override fun getStaticDescription(): String = MyBundle.message("inspection.wsinterfaceparam.description")
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
         return object : JavaElementVisitor() {
