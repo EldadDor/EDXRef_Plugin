@@ -97,6 +97,22 @@ tasks {
         )
     }
 }
+tasks.register<Copy>("copyJarToDist") {
+    group = "build" // Optional: Group the task under the "build" category
+    description = "Copies the jar artifact to the dist folder"
+
+    // Define the source file (the jar artifact)
+    from(layout.buildDirectory.file("libs/EDXref-1.0.0.jar"))
+
+    // Define the destination directory
+    into(layout.projectDirectory.dir("dist"))
+
+    // Ensure the task runs after the jar is built
+    dependsOn(tasks.named("jar"))
+}
+tasks.named("build") {
+    finalizedBy("copyJarToDist")
+}
 
 tasks.test {
     systemProperty("ide.allow.document.model.changes.in.highlighting", "true")
