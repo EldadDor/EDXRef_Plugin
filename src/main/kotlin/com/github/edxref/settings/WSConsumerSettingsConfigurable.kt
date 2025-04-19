@@ -54,7 +54,9 @@ class WSConsumerSettingsConfigurable : Configurable {
         settingsComponent!!.wsParamAnnotationFqn = settings.wsParamAnnotationFqn
         settingsComponent!!.propertyAnnotationFqn = settings.propertyAnnotationFqn
         settingsComponent!!.validatePropertyAnnotations = settings.validatePropertyAnnotations
-        settingsComponent!!.httpRequestAnnotationFqn = settings.httpRequestAnnotationFqn // New setting
+        settingsComponent!!.httpRequestAnnotationFqn = settings.httpRequestAnnotationFqn
+        settingsComponent!!.wsHeaderAnnotationFqn = settings.wsHeaderAnnotationFqn
+        settingsComponent!!.wsHeadersAnnotationFqn = settings.wsHeadersAnnotationFqn
     }
 
 
