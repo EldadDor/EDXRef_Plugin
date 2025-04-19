@@ -1,0 +1,41 @@
+<html>
+<body>
+<p>Validates the usage of <code>@WSHeader</code> annotations on consumer types and their methods.</p>
+
+<p>This inspection checks classes and interfaces that are annotated with <code>@WSConsumer</code> and implement/extend <code>WebserviceConsumer</code> or <code>PearlWebserviceConsumer</code>.</p>
+
+<p>It reports the following issue:</p>
+<ul>
+    <li><b>Warning: Redundant Method Header:</b> If a header name (defined via <code>@WSHeader(name = "...")</code>) is specified both at the type level (directly on the class/interface or within <code>@WSHeaders</code>) and also on a method within
+        that type, a warning is shown on the method's <code>@WSHeader</code>. The type-level definition takes precedence, making the method-level definition redundant.
+    </li>
+</ul>
+
+<p><b>Example:</b></p>
+<pre><code>
+@WSConsumer(url = "...", method = WSMethods.GET)
+@WSHeaders({
+    @WSHeader(name = "X-Request-ID", defaultValue = "DefaultID"), // Defined on type
+    @WSHeader(name = "Accept", defaultValue = "application/json") // Defined on type
+})
+public interface MyConsumer extends WebserviceConsumer {
+
+    // OK: Header only defined on method
+    @Property
+    @WSHeader(name = "X-Custom-Data")
+    void setCustomData(String data);
+
+    // WARN: "X-Request-ID" is already defined on the type MyConsumer.
+    // This annotation on the method is redundant.
+    @Property
+    @WSHeader(name = "X-Request-ID", defaultValue = "SpecificID")
+    void setRequestId(String id);
+
+    // OK: Getter, header only defined here
+    @Property
+    @WSHeader(name = "X-Response-Info")
+    String getResponseInfo();
+}
+</code></pre>
+</body>
+</html>

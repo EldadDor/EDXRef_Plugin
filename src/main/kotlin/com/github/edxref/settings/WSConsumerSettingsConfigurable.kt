@@ -24,7 +24,9 @@ class WSConsumerSettingsConfigurable : Configurable {
                 settingsComponent!!.wsParamAnnotationFqn != settings.wsParamAnnotationFqn ||
                 settingsComponent!!.propertyAnnotationFqn != settings.propertyAnnotationFqn ||
                 settingsComponent!!.validatePropertyAnnotations != settings.validatePropertyAnnotations
-                settingsComponent!!.httpRequestAnnotationFqn != settings.httpRequestAnnotationFqn// New setting
+        settingsComponent!!.httpRequestAnnotationFqn != settings.httpRequestAnnotationFqn
+        settingsComponent!!.wsHeaderAnnotationFqn != settings.wsHeaderAnnotationFqn ||
+                settingsComponent!!.wsHeadersAnnotationFqn != settings.wsHeadersAnnotationFqn
     }
 
     override fun apply() {
@@ -36,8 +38,10 @@ class WSConsumerSettingsConfigurable : Configurable {
         settings.pearlWebserviceConsumerFqn = settingsComponent!!.pearlWebserviceConsumerFqn
         settings.wsParamAnnotationFqn = settingsComponent!!.wsParamAnnotationFqn
         settings.propertyAnnotationFqn = settingsComponent!!.propertyAnnotationFqn
-        settings.validatePropertyAnnotations = settingsComponent!!.validatePropertyAnnotations // New setting
+        settings.validatePropertyAnnotations = settingsComponent!!.validatePropertyAnnotations
         settings.httpRequestAnnotationFqn = settingsComponent!!.httpRequestAnnotationFqn
+        settingsComponent!!.wsHeaderAnnotationFqn = settings.wsHeaderAnnotationFqn
+        settingsComponent!!.wsHeadersAnnotationFqn = settings.wsHeadersAnnotationFqn
     }
 
     override fun reset() {

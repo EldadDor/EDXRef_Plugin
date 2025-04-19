@@ -79,6 +79,22 @@
                 enabledByDefault="true"
                 level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
+        <localInspection
+                language="JAVA"
+                shortName="WSHeaderValidation"
+                displayName="WSConsumer Header Validation (@WSHeader)"
+                groupName="Custom Validations"
+                enabledByDefault="true"
+                level="WARNING"
+                implementationClass="com.github.edxref.inspection.WSHeaderJavaInspection"/>
+        <localInspection
+                language="kotlin"
+                shortName="WSHeaderValidation"
+                displayName="WSConsumer Header Validation (@WSHeader)"
+                groupName="Custom Validations"
+                enabledByDefault="true"
+                level="WARNING"
+                implementationClass="com.github.edxref.inspection.WSHeaderKotlinInspection"/>
 
         <!--        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>-->
         <projectConfigurable

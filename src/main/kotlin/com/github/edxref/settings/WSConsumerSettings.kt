@@ -24,7 +24,9 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
         var wsParamAnnotationFqn: String = "com.github.edxref.annotations.WSParam",
         var propertyAnnotationFqn: String = "com.github.edxref.annotations.Property",
         var validatePropertyAnnotations: Boolean = true, // Keep for interface inspection
-        var httpRequestAnnotationFqn: String = "com.github.edxref.annotations.HttpRequest" // New setting
+        var httpRequestAnnotationFqn: String = "com.github.edxref.annotations.HttpRequest",
+        var wsHeaderAnnotationFqn: String = "com.github.edxref.annotations.WSHeader", // New
+        var wsHeadersAnnotationFqn: String = "com.github.edxref.annotations.WSHeaders" // New (Container)
     )
 
     private var state = State()
@@ -83,8 +85,20 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
         }
     var httpRequestAnnotationFqn: String // New getter/setter
         get() = state.httpRequestAnnotationFqn
-        set(value) { state.httpRequestAnnotationFqn = value }
+        set(value) {
+            state.httpRequestAnnotationFqn = value
+        }
+    var wsHeaderAnnotationFqn: String // New
+        get() = state.wsHeaderAnnotationFqn
+        set(value) {
+            state.wsHeaderAnnotationFqn = value
+        }
 
+    var wsHeadersAnnotationFqn: String // New
+        get() = state.wsHeadersAnnotationFqn
+        set(value) {
+            state.wsHeadersAnnotationFqn = value
+        }
 
     companion object {
         // Extension function to get the service from a Project
