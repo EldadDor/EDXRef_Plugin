@@ -1,0 +1,60 @@
+<html>
+<body>
+<p>Validates <code>@WSConsumer</code> URL parameters against <code>@WSParam</code> setters and ensures <code>@HttpRequest</code> is present for <code>PearlWebserviceConsumer</code> classes.</p>
+
+<p>This inspection checks classes that:</p>
+<ul>
+    <li>Are annotated with <code>@WSConsumer</code>.</li>
+    <li>Extend (directly or indirectly) the <code>PearlWebserviceConsumer</code> class.</li>
+</ul>
+
+<p>It performs the following validations:</p>
+<ul>
+    <li><b>Missing @HttpRequest:</b> Reports an error if the class is not annotated with <code>@HttpRequest</code>.</li>
+    <li><b>URL Parameter vs. Setter Validation:</b>
+        <ul>
+            <li><b>Error: Missing Setter:</b> Reports an error if a parameter like <code>@paramName</code> exists in the URL, but no corresponding setter method (e.g., <code>setParamName(...)</code> or a method with
+                <code>@WSParam(name="paramName")</code>) is found in the class or its superclasses.
+            </li>
+            <li><b>Warning: Setter Name Mismatch:</b> Issues a warning if a setter method's name doesn't conventionally match the parameter name specified or implied by <code>@WSParam</code>.</li>
+            <li><b>Error: @WSParam Name Mismatch:</b> Reports an error if a setter has an explicit <code>@WSParam(name="explicitName")</code>, but <code>@explicitName</code> is *not* found as a parameter placeholder in the <code>@WSConsumer</code>
+                URL.
+            </li>
+        </ul>
+    </li>
+</ul>
+
+<p><b>Example:</b></p>
+<pre><code>
+// ERROR: Missing @HttpRequest
+@WSConsumer(path = "/items/@itemId", method = WSMethods.PUT, msConsumer = @WSMsConsumer(LbMsType.PEARL))
+public class UpdateItemConsumer extends PearlWebserviceConsumer {
+    // OK: Matches @itemId
+    @WSParam(name = "itemId")
+    public void setItemId(String id) { /* ... */ }
+
+    // Some other method
+    public void process() { /* ... */ }
+}
+
+@HttpRequest(responseType = Item.class) // OK: Has @HttpRequest
+@WSConsumer(path = "/items/@itemId", method = WSMethods.PUT, msConsumer = @WSMsConsumer(LbMsType.PEARL))
+public class ValidUpdateItemConsumer extends PearlWebserviceConsumer {
+    // OK: Matches @itemId
+    @WSParam(name = "itemId")
+    public void setItemId(String id) { /* ... */ }
+
+    // WARN: Setter name mismatch
+    @WSParam(name = "category")
+    public void assignCategoryValue(String cat) { /* ... */ }
+
+    // ERROR: @WSParam name "location" not in URL
+    @WSParam(name = "location")
+    public void setLocation(String loc) { /* ... */ }
+}
+
+// ERROR: Missing setter for @itemId would be reported on the @WSConsumer annotation above
+// if setItemId were missing.
+</code></pre>
+</body>
+</html>

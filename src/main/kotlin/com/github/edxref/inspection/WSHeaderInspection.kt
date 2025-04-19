@@ -30,6 +30,7 @@ private fun isWebserviceConsumer(psiClass: PsiClass): Boolean {
     val project = psiClass.project
     val wsConsumerFqn = getWebserviceConsumerFqn(project)
     val pearlConsumerFqn = getPearlWebserviceConsumerFqn(project)
+    // Check if either FQN is valid and the class inherits from it
     return (wsConsumerFqn.isNotBlank() && InheritanceUtil.isInheritor(psiClass, wsConsumerFqn)) ||
             (pearlConsumerFqn.isNotBlank() && InheritanceUtil.isInheritor(psiClass, pearlConsumerFqn))
 }
@@ -65,8 +66,8 @@ private fun getTypeHeaders(psiClass: PsiClass, project: Project): Map<String, Ps
             valueAttr.initializers.forEach { initializer ->
                 if (initializer is PsiAnnotation && initializer.hasQualifiedName(wsHeaderFqn)) {
                     getAnnotationStringAttribute(initializer, "name")?.let { name ->
-                        if (name.isNotBlank() && !headersMap.containsKey(name)) { // Add only if name is valid and not already added
-                            headersMap[name] = initializer
+                        if (name.isNotBlank()) { // Add regardless of duplicates for validation later
+                            headersMap[name] = initializer // Store the actual @WSHeader annotation
                         }
                     }
                 }
@@ -74,11 +75,11 @@ private fun getTypeHeaders(psiClass: PsiClass, project: Project): Map<String, Ps
         }
     }
 
-    // Check for single @WSHeader annotation (only if not already added via container)
+    // Check for single @WSHeader annotation
     val singleHeaderAnnotation = psiClass.getAnnotation(wsHeaderFqn)
     if (singleHeaderAnnotation != null) {
         getAnnotationStringAttribute(singleHeaderAnnotation, "name")?.let { name ->
-            if (name.isNotBlank() && !headersMap.containsKey(name)) {
+            if (name.isNotBlank() && !headersMap.containsKey(name)) { // Add only if not already present from container
                 headersMap[name] = singleHeaderAnnotation
             }
         }
@@ -90,21 +91,18 @@ private fun getTypeHeaders(psiClass: PsiClass, project: Project): Map<String, Ps
 /**
  * Collects @WSHeader annotations defined on a method.
  * Returns a map of header name -> PsiAnnotation (@WSHeader instance).
- * Note: Assumes only one @WSHeader per method is typical, but handles multiple defensively.
  */
 private fun getMethodHeaders(method: PsiMethod, project: Project): Map<String, PsiAnnotation> {
     val headersMap = mutableMapOf<String, PsiAnnotation>()
     val wsHeaderFqn = getWsHeaderFqn(project)
 
-    // In Java, annotations are directly on the method
     method.annotations.filter { it.hasQualifiedName(wsHeaderFqn) }.forEach { headerAnnotation ->
         getAnnotationStringAttribute(headerAnnotation, "name")?.let { name ->
-            if (name.isNotBlank() && !headersMap.containsKey(name)) { // Avoid duplicates on the same method if somehow present
-                headersMap[name] = headerAnnotation
+            if (name.isNotBlank()) { // Allow multiple for now, redundancy check later
+                headersMap[name] = headerAnnotation // Store the actual @WSHeader annotation
             }
         }
     }
-    // Note: Kotlin might require checking KtPropertyAccessor if annotation is on getter/setter specifically
     return headersMap
 }
 
@@ -120,42 +118,103 @@ interface WSHeaderInspectionLogic {
     ) {
         // 1. Prerequisites: Check for @WSConsumer and consumer type
         val wsConsumerAnnotation = psiClass.getAnnotation(getWsConsumerAnnotationFqn(project)) ?: return
-        if (!isWebserviceConsumer(psiClass)) return // Ensure it's a relevant consumer type
+        if (!isWebserviceConsumer(psiClass)) return
 
         logIfEnabled(project, log, "Running WSHeader validation on ${psiClass.name}")
 
-        // 2. Get headers defined at the type level
+        // 2. Get headers defined at the type level AND validate their defaultValue
         val typeHeaders = getTypeHeaders(psiClass, project)
-        if (typeHeaders.isEmpty()) {
-            logIfEnabled(project, log, "No type-level headers found on ${psiClass.name}")
-            // No type headers, so no redundancy possible. We can potentially stop here
-            // unless there are other method-only header rules in the future.
-            return
-        }
+        validateTypeHeaderDefaults(typeHeaders, holder) // NEW validation step
         logIfEnabled(project, log, "Type headers on ${psiClass.name}: ${typeHeaders.keys}")
 
-        // 3. Iterate through methods and check for redundant headers
-        // Use allMethods to check inherited methods too, if applicable. Use methods for only direct declarations.
-        for (method in psiClass.methods) { // Or psiClass.allMethods
+
+        // 3. Iterate through methods, validate setter defaults, and check for redundancy
+        for (method in psiClass.methods) { // Or psiClass.allMethods if needed
             val methodHeaders = getMethodHeaders(method, project)
+            if (methodHeaders.isEmpty()) continue // Skip methods without headers
+
+            val isSetter = method.name.startsWith("set") && method.parameterList.parametersCount == 1
 
             methodHeaders.forEach { (methodHeaderName, methodHeaderAnnotation) ->
-                // Check if this header name is also defined at the type level
+
+                // NEW: Validate defaultValue on setters
+                if (isSetter) {
+                    validateSetterHeaderDefault(method, methodHeaderName, methodHeaderAnnotation, holder)
+                }
+
+                // Check for redundancy against type headers
                 if (typeHeaders.containsKey(methodHeaderName)) {
                     logIfEnabled(project, log, "WARN: Redundant header '$methodHeaderName' found on method '${method.name}' also defined on type '${psiClass.name}'")
-
-                    // Report warning on the method's @WSHeader annotation or its name attribute
                     val nameAttrValue = methodHeaderAnnotation.findAttributeValue("name")
                     holder.registerProblem(
-                        nameAttrValue ?: methodHeaderAnnotation, // Highlight name value or whole annotation
+                        nameAttrValue ?: methodHeaderAnnotation,
                         MyBundle.message("inspection.wsheader.warn.redundant.method.header", methodHeaderName),
-                        ProblemHighlightType.WARNING // Severity WARN
+                        ProblemHighlightType.WARNING
                     )
                 }
             }
         }
     }
+
+    // --- New Validation Helper Methods ---
+
+    /**
+     * Validates that @WSHeader annotations defined at the type level (within @WSHeaders)
+     * have a non-empty defaultValue.
+     */
+    private fun validateTypeHeaderDefaults(
+        typeHeaders: Map<String, PsiAnnotation>,
+        holder: ProblemsHolder
+    ) {
+        typeHeaders.forEach { (headerName, headerAnnotation) ->
+            // This rule applies specifically to headers defined within @WSHeaders container
+            // or potentially a single @WSHeader if that's also required.
+            // Assuming the requirement is mainly for those inside @WSHeaders:
+            val parentAnnotation = headerAnnotation.parent?.parent // Heuristic: @WSHeader -> PsiArrayInit -> @WSHeaders
+            if (parentAnnotation is PsiAnnotation && parentAnnotation.hasQualifiedName(getWsHeadersFqn(headerAnnotation.project))) {
+                val defaultValue = getAnnotationStringAttribute(headerAnnotation, "defaultValue")
+                if (defaultValue.isNullOrEmpty()) { // Check for null or empty string ""
+                    logIfEnabled(headerAnnotation.project, log, "ERROR: Type-level header '$headerName' has missing or empty defaultValue.")
+                    val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
+                    holder.registerProblem(
+                        defaultValueAttr ?: headerAnnotation, // Highlight defaultValue or whole annotation
+                        MyBundle.message("inspection.wsheader.error.missing.type.defaultvalue", headerName),
+                        ProblemHighlightType.ERROR
+                    )
+                }
+            }
+            // Add similar check here if single @WSHeader on type also requires non-empty default
+        }
+    }
+
+    /**
+     * Validates that if a defaultValue attribute exists on a @WSHeader on a setter method,
+     * it must be non-empty.
+     */
+    private fun validateSetterHeaderDefault(
+        method: PsiMethod,
+        headerName: String,
+        headerAnnotation: PsiAnnotation,
+        holder: ProblemsHolder
+    ) {
+        val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
+        // Check if the defaultValue attribute *exists*
+        if (defaultValueAttr != null) {
+            // If it exists, its value must be a non-empty string
+            val defaultValue = getAnnotationStringAttribute(headerAnnotation, "defaultValue")
+            if (defaultValue.isNullOrEmpty()) { // Check for null or empty string ""
+                logIfEnabled(method.project, log, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty defaultValue.")
+                holder.registerProblem(
+                    defaultValueAttr, // Highlight the problematic defaultValue attribute
+                    MyBundle.message("inspection.wsheader.error.invalid.setter.defaultvalue", headerName, method.name),
+                    ProblemHighlightType.ERROR
+                )
+            }
+        }
+        // If defaultValueAttr is null (attribute not present), it's OK for setters.
+    }
 }
+
 
 // --- Java Inspection ---
 class WSHeaderJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSHeaderInspectionLogic {
@@ -188,11 +247,6 @@ class WSHeaderKotlinInspection : AbstractKotlinInspection(), WSHeaderInspectionL
                     logIfEnabled(classOrObject.project, log, "Could not get LightClass for Kotlin element ${classOrObject.name}")
                 }
             }
-            // Note: For Kotlin, annotations might be on KtProperty or KtPropertyAccessor.
-            // The current logic using light classes checks the generated Java methods.
-            // If annotations are *only* on Kotlin properties/accessors and don't generate
-            // corresponding Java method annotations, this might need adjustment to visit
-            // KtProperty/KtPropertyAccessor directly. Test with your specific annotation usage.
         }
     }
 }
