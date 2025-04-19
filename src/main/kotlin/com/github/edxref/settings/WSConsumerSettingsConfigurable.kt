@@ -40,8 +40,8 @@ class WSConsumerSettingsConfigurable : Configurable {
         settings.propertyAnnotationFqn = settingsComponent!!.propertyAnnotationFqn
         settings.validatePropertyAnnotations = settingsComponent!!.validatePropertyAnnotations
         settings.httpRequestAnnotationFqn = settingsComponent!!.httpRequestAnnotationFqn
-        settingsComponent!!.wsHeaderAnnotationFqn = settings.wsHeaderAnnotationFqn
-        settingsComponent!!.wsHeadersAnnotationFqn = settings.wsHeadersAnnotationFqn
+        settings.wsHeaderAnnotationFqn = settingsComponent!!.wsHeaderAnnotationFqn
+        settings.wsHeadersAnnotationFqn = settingsComponent!!.wsHeadersAnnotationFqn
     }
 
     override fun reset() {
