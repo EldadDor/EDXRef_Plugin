@@ -46,7 +46,7 @@
                 implementationClass="com.github.edxref.inspection.WSConsumerJavaInspection"/>
         <localInspection
                 language="JAVA"
-                shortName="WSClassParamValidation"
+                shortName="WSClassParamValidationJava"
                 displayName="WSConsumer Class Parameter Validation (Pearl)"
                 groupName="Custom Validations"
                 enabledByDefault="true"
@@ -54,7 +54,7 @@
                 implementationClass="com.github.edxref.inspection.WSClassParamJavaInspection"/>
         <localInspection
                 language="kotlin"
-                shortName="WSClassParamValidation"
+                shortName="WSClassParamValidationKotlin"
                 displayName="WSConsumer Class Parameter Validation (Pearl)"
                 groupName="Custom Validations"
                 enabledByDefault="true"
@@ -81,7 +81,7 @@
                 implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
         <localInspection
                 language="JAVA"
-                shortName="WSHeaderValidation"
+                shortName="WSHeaderValidationJava"
                 displayName="WSConsumer Header Validation (@WSHeader)"
                 groupName="Custom Validations"
                 enabledByDefault="true"
@@ -89,7 +89,7 @@
                 implementationClass="com.github.edxref.inspection.WSHeaderJavaInspection"/>
         <localInspection
                 language="kotlin"
-                shortName="WSHeaderValidation"
+                shortName="WSHeaderValidationKotlin"
                 displayName="WSConsumer Header Validation (@WSHeader)"
                 groupName="Custom Validations"
                 enabledByDefault="true"
