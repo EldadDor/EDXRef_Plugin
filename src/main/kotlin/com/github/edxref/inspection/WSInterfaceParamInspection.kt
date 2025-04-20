@@ -24,6 +24,7 @@ private fun logIfEnabled(project: Project, logger: Logger, message: String) {
     } catch (e: Exception) { /* ignore */
     }
 }
+
 private fun isImplementingInterface(psiClass: PsiClass, interfaceFqn: String): Boolean {
     if (interfaceFqn.isBlank()) return false
     return InheritanceUtil.isInheritor(psiClass, interfaceFqn)

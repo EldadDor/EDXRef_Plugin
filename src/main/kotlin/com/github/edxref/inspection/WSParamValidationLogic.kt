@@ -14,7 +14,10 @@ import java.util.regex.Pattern
 private fun getSettings(project: Project) = project.getWSConsumerSettings()
 private fun getWsParamFqn(project: Project) = getSettings(project).wsParamAnnotationFqn.ifBlank { "com.github.edxref.annotations.WSParam" }
 private fun logIfEnabled(project: Project, logger: Logger, message: String) {
-    try { if (getSettings(project).enableLog) logger.info(message) } catch (e: Exception) { /* ignore */ }
+    try {
+        if (getSettings(project).enableLog) logger.info(message)
+    } catch (e: Exception) { /* ignore */
+    }
 }
 
 // --- Shared Helper Functions ---
@@ -43,7 +46,9 @@ internal fun getEffectiveParamName(method: PsiMethod): String? {
         val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
         val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
             nameAttrValue.value as String
-        } else { null }
+        } else {
+            null
+        }
         if (!explicitName.isNullOrBlank()) return explicitName
     }
     if (method.name.length > 3) {
@@ -91,7 +96,9 @@ interface WSParamValidationLogic {
                 val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
                 val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
                     nameAttrValue.value as String
-                } else { null }
+                } else {
+                    null
+                }
                 if (!explicitName.isNullOrBlank()) {
                     methodsWithExplicitWsParamName[method] = explicitName
                 }

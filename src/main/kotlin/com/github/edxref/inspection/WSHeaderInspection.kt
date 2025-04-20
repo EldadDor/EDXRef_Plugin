@@ -35,6 +35,7 @@ private fun isWebserviceConsumer(psiClass: PsiClass): Boolean {
             (pearlConsumerFqn.isNotBlank() && InheritanceUtil.isInheritor(psiClass, pearlConsumerFqn))
 }
 
+
 // --- Helper Functions ---
 
 /**
@@ -49,11 +50,8 @@ private fun getAnnotationStringAttribute(annotation: PsiAnnotation, attributeNam
     }
 }
 
-/**
- * Collects all @WSHeader annotations defined directly on a type, handling @WSHeaders container.
- * Returns a map of header name -> PsiAnnotation (@WSHeader instance).
- */
-private fun getTypeHeaders(psiClass: PsiClass, project: Project): Map<String, PsiAnnotation> {
+// **MODIFIED**: Added logger parameter
+private fun getTypeHeaders(psiClass: PsiClass, project: Project, logger: Logger): Map<String, PsiAnnotation> {
     val headersMap = mutableMapOf<String, PsiAnnotation>()
     val wsHeaderFqn = getWsHeaderFqn(project)
     val wsHeadersFqn = getWsHeadersFqn(project)
@@ -66,8 +64,10 @@ private fun getTypeHeaders(psiClass: PsiClass, project: Project): Map<String, Ps
             valueAttr.initializers.forEach { initializer ->
                 if (initializer is PsiAnnotation && initializer.hasQualifiedName(wsHeaderFqn)) {
                     getAnnotationStringAttribute(initializer, "name")?.let { name ->
-                        if (name.isNotBlank()) { // Add regardless of duplicates for validation later
-                            headersMap[name] = initializer // Store the actual @WSHeader annotation
+                        if (name.isNotBlank()) {
+                            headersMap[name] = initializer
+                            // Use the passed logger instance
+                            logIfEnabled(project, logger, "Collected @WSHeader '$name' from @WSHeaders on type '${psiClass.name}'")
                         }
                     }
                 }
@@ -79,14 +79,17 @@ private fun getTypeHeaders(psiClass: PsiClass, project: Project): Map<String, Ps
     val singleHeaderAnnotation = psiClass.getAnnotation(wsHeaderFqn)
     if (singleHeaderAnnotation != null) {
         getAnnotationStringAttribute(singleHeaderAnnotation, "name")?.let { name ->
-            if (name.isNotBlank() && !headersMap.containsKey(name)) { // Add only if not already present from container
+            if (name.isNotBlank() && !headersMap.containsKey(name)) {
                 headersMap[name] = singleHeaderAnnotation
+                // Use the passed logger instance
+                logIfEnabled(project, logger, "Collected single @WSHeader '$name' from type '${psiClass.name}'")
             }
         }
     }
 
     return headersMap
 }
+
 
 /**
  * Collects @WSHeader annotations defined on a method.
@@ -109,7 +112,7 @@ private fun getMethodHeaders(method: PsiMethod, project: Project): Map<String, P
 
 // --- Inspection Logic ---
 interface WSHeaderInspectionLogic {
-    val log: Logger
+    val log: Logger // Logger provided by implementing class
 
     fun validateHeaders(
         project: Project,
@@ -123,8 +126,10 @@ interface WSHeaderInspectionLogic {
         logIfEnabled(project, log, "Running WSHeader validation on ${psiClass.name}")
 
         // 2. Get headers defined at the type level AND validate their defaultValue
-        val typeHeaders = getTypeHeaders(psiClass, project)
-        validateTypeHeaderDefaults(typeHeaders, holder) // NEW validation step
+        // **MODIFIED**: Pass the 'log' instance here
+        val typeHeaders = getTypeHeaders(psiClass, project, log)
+        // Pass 'log' instance to validation helpers
+        validateTypeHeaderDefaults(typeHeaders, holder, log)
         logIfEnabled(project, log, "Type headers on ${psiClass.name}: ${typeHeaders.keys}")
 
 
@@ -139,7 +144,8 @@ interface WSHeaderInspectionLogic {
 
                 // NEW: Validate defaultValue on setters
                 if (isSetter) {
-                    validateSetterHeaderDefault(method, methodHeaderName, methodHeaderAnnotation, holder)
+                    // Pass 'log' instance to validation helpers
+                    validateSetterHeaderDefault(method, methodHeaderName, methodHeaderAnnotation, holder, log)
                 }
 
                 // Check for redundancy against type headers
@@ -156,34 +162,34 @@ interface WSHeaderInspectionLogic {
         }
     }
 
-    // --- New Validation Helper Methods ---
-
     /**
      * Validates that @WSHeader annotations defined at the type level (within @WSHeaders)
      * have a non-empty defaultValue.
      */
+    // **MODIFIED**: Added logger parameter
     private fun validateTypeHeaderDefaults(
         typeHeaders: Map<String, PsiAnnotation>,
-        holder: ProblemsHolder
+        holder: ProblemsHolder,
+        logger: Logger // Receive logger instance
     ) {
         typeHeaders.forEach { (headerName, headerAnnotation) ->
-            // This rule applies specifically to headers defined within @WSHeaders container
-            // or potentially a single @WSHeader if that's also required.
-            // Assuming the requirement is mainly for those inside @WSHeaders:
-            val parentAnnotation = headerAnnotation.parent?.parent // Heuristic: @WSHeader -> PsiArrayInit -> @WSHeaders
+            val parentAnnotation = headerAnnotation.parent?.parent
             if (parentAnnotation is PsiAnnotation && parentAnnotation.hasQualifiedName(getWsHeadersFqn(headerAnnotation.project))) {
                 val defaultValue = getAnnotationStringAttribute(headerAnnotation, "defaultValue")
-                if (defaultValue.isNullOrEmpty()) { // Check for null or empty string ""
-                    logIfEnabled(headerAnnotation.project, log, "ERROR: Type-level header '$headerName' has missing or empty defaultValue.")
+                // Use the passed logger instance
+                logIfEnabled(headerAnnotation.project, logger, "Validating @WSHeader '$headerName' with defaultValue='$defaultValue'")
+
+                if (defaultValue.isNullOrEmpty()) {
+                    // Use the passed logger instance
+                    logIfEnabled(headerAnnotation.project, logger, "ERROR: Type-level header '$headerName' has missing or empty defaultValue.")
                     val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
                     holder.registerProblem(
-                        defaultValueAttr ?: headerAnnotation, // Highlight defaultValue or whole annotation
+                        defaultValueAttr ?: headerAnnotation,
                         MyBundle.message("inspection.wsheader.error.missing.type.defaultvalue", headerName),
                         ProblemHighlightType.ERROR
                     )
                 }
             }
-            // Add similar check here if single @WSHeader on type also requires non-empty default
         }
     }
 
@@ -191,19 +197,24 @@ interface WSHeaderInspectionLogic {
      * Validates that if a defaultValue attribute exists on a @WSHeader on a setter method,
      * it must be non-empty.
      */
+    // **MODIFIED**: Added logger parameter
     private fun validateSetterHeaderDefault(
         method: PsiMethod,
         headerName: String,
         headerAnnotation: PsiAnnotation,
-        holder: ProblemsHolder
+        holder: ProblemsHolder,
+        logger: Logger // Receive logger instance
     ) {
         val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
         // Check if the defaultValue attribute *exists*
         if (defaultValueAttr != null) {
             // If it exists, its value must be a non-empty string
             val defaultValue = getAnnotationStringAttribute(headerAnnotation, "defaultValue")
+            // Use the passed logger instance
+            logIfEnabled(method.project, logger, "Validating @WSHeader '$headerName' on setter '${method.name}' with defaultValue='$defaultValue'")
             if (defaultValue.isNullOrEmpty()) { // Check for null or empty string ""
-                logIfEnabled(method.project, log, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty defaultValue.")
+                // Use the passed logger instance
+                logIfEnabled(method.project, logger, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty defaultValue.")
                 holder.registerProblem(
                     defaultValueAttr, // Highlight the problematic defaultValue attribute
                     MyBundle.message("inspection.wsheader.error.invalid.setter.defaultvalue", headerName, method.name),
@@ -218,6 +229,7 @@ interface WSHeaderInspectionLogic {
 
 // --- Java Inspection ---
 class WSHeaderJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSHeaderInspectionLogic {
+    // Provide the logger instance required by the interface
     override val log = logger<WSHeaderJavaInspection>()
     override fun getDisplayName(): String = MyBundle.message("inspection.wsheader.displayname")
 
@@ -233,6 +245,7 @@ class WSHeaderJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSHeaderIn
 
 // --- Kotlin Inspection ---
 class WSHeaderKotlinInspection : AbstractKotlinInspection(), WSHeaderInspectionLogic {
+    // Provide the logger instance required by the interface
     override val log = logger<WSHeaderKotlinInspection>()
     override fun getDisplayName(): String = MyBundle.message("inspection.wsheader.displayname")
 
@@ -244,6 +257,7 @@ class WSHeaderKotlinInspection : AbstractKotlinInspection(), WSHeaderInspectionL
                 if (psiClass != null) {
                     validateHeaders(classOrObject.project, psiClass, holder) // Call shared logic
                 } else {
+                    // Use the class's logger instance here
                     logIfEnabled(classOrObject.project, log, "Could not get LightClass for Kotlin element ${classOrObject.name}")
                 }
             }
