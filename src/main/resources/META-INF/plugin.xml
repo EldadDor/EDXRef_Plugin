@@ -80,14 +80,14 @@
                 level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
         <localInspection language="JAVA"
-                         shortName="WSHeadersOnTypeValidation"
+                         shortName="WSHeadersOnTypeValidationJava"
                          displayName="WSConsumer Type Header Validation (@WSHeaders)"
                          groupName="Custom Validations"
                          enabledByDefault="true"
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.WSHeadersOnTypeJavaInspection"/>
         <localInspection language="kotlin"
-                         shortName="WSHeadersOnTypeValidation"
+                         shortName="WSHeadersOnTypeValidationKotlin"
                          displayName="WSConsumer Type Header Validation (@WSHeaders)"
                          groupName="Custom Validations"
                          enabledByDefault="true"
@@ -96,14 +96,14 @@
 
         <!-- NEW: Register WSHeaderOnMethodInspection -->
         <localInspection language="JAVA"
-                         shortName="WSHeaderOnMethodValidation"
+                         shortName="WSHeaderOnMethodValidationJava"
                          displayName="WSConsumer Method Header Validation (@WSHeader)"
                          groupName="Custom Validations"
                          enabledByDefault="true"
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.WSHeaderOnMethodJavaInspection"/>
         <localInspection language="kotlin"
-                         shortName="WSHeaderOnMethodValidation"
+                         shortName="WSHeaderOnMethodValidationKotlin"
                          displayName="WSConsumer Method Header Validation (@WSHeader)"
                          groupName="Custom Validations"
                          enabledByDefault="true"
