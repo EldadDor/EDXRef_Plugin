@@ -5,7 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.jvm") version "1.9.25"
     id("org.jetbrains.intellij") version "1.17.0"
     id("org.jetbrains.changelog") version "2.2.1"
-    id("org.jetbrains.qodana") version "2024.1.9"
+    id("org.jetbrains.qodana") version "2025.1.0"
     id("org.jetbrains.kotlinx.kover") version "0.8.3"
 }
 
