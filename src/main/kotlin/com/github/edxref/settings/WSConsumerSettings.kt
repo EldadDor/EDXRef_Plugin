@@ -23,10 +23,11 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
         var pearlWebserviceConsumerFqn: String = "com.github.edxref.annotations.PearlWebserviceConsumer",
         var wsParamAnnotationFqn: String = "com.github.edxref.annotations.WSParam",
         var propertyAnnotationFqn: String = "com.github.edxref.annotations.Property",
-        var validatePropertyAnnotations: Boolean = true, // Keep for interface inspection
+        var validatePropertyAnnotations: Boolean = true,
         var httpRequestAnnotationFqn: String = "com.github.edxref.annotations.HttpRequest",
-        var wsHeaderAnnotationFqn: String = "com.github.edxref.annotations.WSHeader", // New
-        var wsHeadersAnnotationFqn: String = "com.github.edxref.annotations.WSHeaders" // New (Container)
+        var wsHeaderAnnotationFqn: String = "com.github.edxref.annotations.WSHeader",
+        var wsHeadersAnnotationFqn: String = "com.github.edxref.annotations.WSHeaders",
+        var internalApiAnnotationFqn: String = "com.github.edxref.annotations.InternalApi" // New
     )
 
     private var state = State()
@@ -98,6 +99,11 @@ class WSConsumerSettings : PersistentStateComponent<WSConsumerSettings.State> {
         get() = state.wsHeadersAnnotationFqn
         set(value) {
             state.wsHeadersAnnotationFqn = value
+        }
+    var internalApiAnnotationFqn: String // New
+        get() = state.internalApiAnnotationFqn
+        set(value) {
+            state.internalApiAnnotationFqn = value
         }
 
     companion object {

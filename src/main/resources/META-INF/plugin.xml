@@ -79,23 +79,6 @@
                 enabledByDefault="true"
                 level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
-        <!--<localInspection
-                language="JAVA"
-                shortName="WSHeaderValidationJava"
-                displayName="WSConsumer Header Validation (@WSHeader)"
-                groupName="Custom Validations"
-                enabledByDefault="true"
-                level="WARNING"
-                implementationClass="com.github.edxref.inspection.WSHeaderJavaInspection"/>
-        <localInspection
-                language="kotlin"
-                shortName="WSHeaderValidationKotlin"
-                displayName="WSConsumer Header Validation (@WSHeader)"
-                groupName="Custom Validations"
-                enabledByDefault="true"
-                level="WARNING"
-                implementationClass="com.github.edxref.inspection.WSHeaderKotlinInspection"/>-->
-        <!-- NEW: Register WSHeadersOnTypeInspection -->
         <localInspection language="JAVA"
                          shortName="WSHeadersOnTypeValidation"
                          displayName="WSConsumer Type Header Validation (@WSHeaders)"
@@ -126,7 +109,20 @@
                          enabledByDefault="true"
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.WSHeaderOnMethodKotlinInspection"/>
-
+        <localInspection language="JAVA"
+                         shortName="InternalApiValidation"
+                         displayName="Internal API Usage Validation (@InternalApi)"
+                         groupName="Custom Validations"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="com.github.edxref.inspection.InternalApiJavaInspection"/>
+        <localInspection language="kotlin"
+                         shortName="InternalApiValidation"
+                         displayName="Internal API Usage Validation (@InternalApi)"
+                         groupName="Custom Validations"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="com.github.edxref.inspection.InternalApiKotlinInspection"/>
         <!--        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>-->
         <projectConfigurable
                 id="com.github.edxref.settings.WSConsumerSettingsConfigurable"

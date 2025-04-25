@@ -26,7 +26,8 @@ class WSConsumerSettingsConfigurable : Configurable {
                 settingsComponent!!.validatePropertyAnnotations != settings.validatePropertyAnnotations ||
                 settingsComponent!!.httpRequestAnnotationFqn != settings.httpRequestAnnotationFqn ||
                 settingsComponent!!.wsHeaderAnnotationFqn != settings.wsHeaderAnnotationFqn ||
-                settingsComponent!!.wsHeadersAnnotationFqn != settings.wsHeadersAnnotationFqn
+                settingsComponent!!.wsHeadersAnnotationFqn != settings.wsHeadersAnnotationFqn ||
+                settingsComponent!!.internalApiAnnotationFqn != settings.internalApiAnnotationFqn // New
     }
 
     override fun apply() {
@@ -42,6 +43,7 @@ class WSConsumerSettingsConfigurable : Configurable {
         settings.httpRequestAnnotationFqn = settingsComponent!!.httpRequestAnnotationFqn
         settings.wsHeaderAnnotationFqn = settingsComponent!!.wsHeaderAnnotationFqn
         settings.wsHeadersAnnotationFqn = settingsComponent!!.wsHeadersAnnotationFqn
+        settings.internalApiAnnotationFqn = settingsComponent!!.internalApiAnnotationFqn // New
     }
 
     override fun reset() {
@@ -57,6 +59,7 @@ class WSConsumerSettingsConfigurable : Configurable {
         settingsComponent!!.httpRequestAnnotationFqn = settings.httpRequestAnnotationFqn
         settingsComponent!!.wsHeaderAnnotationFqn = settings.wsHeaderAnnotationFqn
         settingsComponent!!.wsHeadersAnnotationFqn = settings.wsHeadersAnnotationFqn
+        settingsComponent!!.internalApiAnnotationFqn = settings.internalApiAnnotationFqn // New
     }
 
 
