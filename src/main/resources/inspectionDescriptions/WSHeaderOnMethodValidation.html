@@ -1,0 +1,38 @@
+<html>
+<body>
+<p>Validates <code>@WSHeader</code> annotations defined on methods within consumer types.</p>
+<p>This inspection checks methods inside classes/interfaces that are annotated with <code>@WSConsumer</code> and implement/extend <code>WebserviceConsumer</code> or <code>PearlWebserviceConsumer</code>.</p>
+<p>It reports the following issues:</p>
+<ul>
+    <li><b>Error: Invalid Setter Default Value:</b> If <code>@WSHeader</code> is placed on a setter method and the <code>defaultValue</code> attribute is present but empty (<code>""</code>), an error is reported. The attribute must have a non-empty
+        value if specified on a setter.
+    </li>
+    <li><b>Warning: Redundant Method Header:</b> If a header name is specified via <code>@WSHeader</code> on a method, and the same header name is *also* defined at the type level (directly or via <code>@WSHeaders</code>), a warning is shown on the
+        method's <code>@WSHeader</code>. The type-level definition takes precedence.
+    </li>
+</ul>
+<p><b>Example:</b></p>
+<pre><code>
+@WSConsumer(url = "...")
+@WSHeaders({ @WSHeader(name = "X-Request-ID", defaultValue = "TypeID") })
+public interface MyConsumer extends WebserviceConsumer {
+
+    // OK: Header only on method, defaultValue not required/present
+    @Property @WSHeader(name = "X-Custom-Data")
+    void setCustomData(String data);
+
+    // ERROR: defaultValue is present but empty on setter
+    @Property @WSHeader(name = "X-Auth", defaultValue = "")
+    void setAuthToken(String token);
+
+    // WARN: Redundant, "X-Request-ID" defined on type
+    @Property @WSHeader(name = "X-Request-ID", defaultValue = "MethodID")
+    void setRequestId(String id);
+
+    // OK: Header on getter, defaultValue allowed but not required to be non-empty
+    @Property @WSHeader(name = "X-Response-Info", defaultValue = "")
+    String getResponseInfo();
+}
+</code></pre>
+</body>
+</html>

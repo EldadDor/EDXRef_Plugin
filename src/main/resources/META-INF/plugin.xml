@@ -79,7 +79,7 @@
                 enabledByDefault="true"
                 level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
-        <localInspection
+        <!--<localInspection
                 language="JAVA"
                 shortName="WSHeaderValidationJava"
                 displayName="WSConsumer Header Validation (@WSHeader)"
@@ -94,7 +94,38 @@
                 groupName="Custom Validations"
                 enabledByDefault="true"
                 level="WARNING"
-                implementationClass="com.github.edxref.inspection.WSHeaderKotlinInspection"/>
+                implementationClass="com.github.edxref.inspection.WSHeaderKotlinInspection"/>-->
+        <!-- NEW: Register WSHeadersOnTypeInspection -->
+        <localInspection language="JAVA"
+                         shortName="WSHeadersOnTypeValidation"
+                         displayName="WSConsumer Type Header Validation (@WSHeaders)"
+                         groupName="Custom Validations"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="com.github.edxref.inspection.WSHeadersOnTypeJavaInspection"/>
+        <localInspection language="kotlin"
+                         shortName="WSHeadersOnTypeValidation"
+                         displayName="WSConsumer Type Header Validation (@WSHeaders)"
+                         groupName="Custom Validations"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="com.github.edxref.inspection.WSHeadersOnTypeKotlinInspection"/>
+
+        <!-- NEW: Register WSHeaderOnMethodInspection -->
+        <localInspection language="JAVA"
+                         shortName="WSHeaderOnMethodValidation"
+                         displayName="WSConsumer Method Header Validation (@WSHeader)"
+                         groupName="Custom Validations"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="com.github.edxref.inspection.WSHeaderOnMethodJavaInspection"/>
+        <localInspection language="kotlin"
+                         shortName="WSHeaderOnMethodValidation"
+                         displayName="WSConsumer Method Header Validation (@WSHeader)"
+                         groupName="Custom Validations"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="com.github.edxref.inspection.WSHeaderOnMethodKotlinInspection"/>
 
         <!--        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>-->
         <projectConfigurable
