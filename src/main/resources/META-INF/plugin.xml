@@ -110,14 +110,14 @@
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.WSHeaderOnMethodKotlinInspection"/>
         <localInspection language="JAVA"
-                         shortName="InternalApiValidation"
+                         shortName="InternalApiValidationJava"
                          displayName="Internal API Usage Validation (@InternalApi)"
                          groupName="Custom Validations"
                          enabledByDefault="true"
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.InternalApiJavaInspection"/>
         <localInspection language="kotlin"
-                         shortName="InternalApiValidation"
+                         shortName="InternalApiValidationKotlin"
                          displayName="Internal API Usage Validation (@InternalApi)"
                          groupName="Custom Validations"
                          enabledByDefault="true"
