@@ -129,24 +129,15 @@ interface WSHeaderOnMethodInspectionLogic {
         logger: Logger
     ) {
         val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
-        if (defaultValueAttr != null) {
-            val isValid = when (defaultValueAttr) {
-                is PsiLiteralExpression -> (defaultValueAttr.value as? String)?.isNotEmpty() == true
-                is PsiReferenceExpression -> true // Accept constant reference
-                else -> false
-            }
-            logIfEnabled(method.project, logger, "Validating @WSHeader '$headerName' on setter '${method.name}' with defaultValueAttr='$defaultValueAttr'")
-            if (!isValid) {
-                logIfEnabled(method.project, logger, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty or invalid defaultValue.")
-
-                // Highlight the method itself
+        if (defaultValueAttr is PsiLiteralExpression) {
+            val value = defaultValueAttr.value as? String
+            if (value != null && value.isEmpty()) {
+                logIfEnabled(method.project, logger, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty defaultValue.")
                 holder.registerProblem(
                     method.nameIdentifier ?: method,
                     MyBundle.message("inspection.wsheaderonmethod.error.invalid.setter.defaultvalue", headerName, method.name),
                     ProblemHighlightType.ERROR
                 )
-
-                // Also highlight the class/interface declaration
                 val classOrInterface = method.containingClass
                 val classElementToHighlight = classOrInterface?.nameIdentifier ?: classOrInterface
                 if (classElementToHighlight != null) {
@@ -158,6 +149,7 @@ interface WSHeaderOnMethodInspectionLogic {
                 }
             }
         }
+        // If it's a reference (PsiReferenceExpression), or not present, do nothing (no error)
     }
 
 
