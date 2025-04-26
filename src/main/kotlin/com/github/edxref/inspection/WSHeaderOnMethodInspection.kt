@@ -130,10 +130,14 @@ interface WSHeaderOnMethodInspectionLogic {
     ) {
         val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
         if (defaultValueAttr != null) {
-            val defaultValue = getAnnotationStringAttribute(headerAnnotation, "defaultValue")
-            logIfEnabled(method.project, logger, "Validating @WSHeader '$headerName' on setter '${method.name}' with defaultValue='$defaultValue'")
-            if (defaultValue.isNullOrEmpty()) {
-                logIfEnabled(method.project, logger, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty defaultValue.")
+            val isValid = when (defaultValueAttr) {
+                is PsiLiteralExpression -> (defaultValueAttr.value as? String)?.isNotEmpty() == true
+                is PsiReferenceExpression -> true // Accept constant reference
+                else -> false
+            }
+            logIfEnabled(method.project, logger, "Validating @WSHeader '$headerName' on setter '${method.name}' with defaultValueAttr='$defaultValueAttr'")
+            if (!isValid) {
+                logIfEnabled(method.project, logger, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty or invalid defaultValue.")
 
                 // Highlight the method itself
                 holder.registerProblem(

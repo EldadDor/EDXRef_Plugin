@@ -90,16 +90,19 @@ interface WSHeadersOnTypeInspectionLogic {
         logger: Logger
     ) {
         val headerName = getAnnotationStringAttribute(headerAnnotation, "name") ?: "[Unknown Name]"
-        val defaultValue = getAnnotationStringAttribute(headerAnnotation, "defaultValue")
-        logIfEnabled(headerAnnotation.project, logger, "Validating type @WSHeader '$headerName' with defaultValue='$defaultValue'")
+        val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
+        val isValid = when (defaultValueAttr) {
+            is PsiLiteralExpression -> (defaultValueAttr.value as? String)?.isNotEmpty() == true
+            is PsiReferenceExpression -> true // Accept constant reference
+            else -> false
+        }
+        logIfEnabled(headerAnnotation.project, logger, "Validating type @WSHeader '$headerName' with defaultValueAttr='$defaultValueAttr'")
 
-        if (defaultValue.isNullOrEmpty()) {
-            logIfEnabled(headerAnnotation.project, logger, "ERROR: Type-level header '$headerName' has missing or empty defaultValue.")
-
-            // Find the class/interface declaration to highlight
+        if (!isValid) {
+            logIfEnabled(headerAnnotation.project, logger, "ERROR: Type-level header '$headerName' has missing, empty, or invalid defaultValue.")
+            // Always mark the class/interface itself
             val classOrInterface = headerAnnotation.parent?.parent?.parent as? PsiClass
             val elementToHighlight = classOrInterface?.nameIdentifier ?: classOrInterface ?: headerAnnotation
-
             holder.registerProblem(
                 elementToHighlight,
                 MyBundle.message("inspection.wsheadersontype.error.missing.defaultvalue", headerName),
