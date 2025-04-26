@@ -126,7 +126,7 @@ interface WSHeaderOnMethodInspectionLogic {
         headerName: String,
         headerAnnotation: PsiAnnotation,
         holder: ProblemsHolder,
-        logger: Logger // Receive logger
+        logger: Logger
     ) {
         val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
         if (defaultValueAttr != null) {
@@ -134,14 +134,28 @@ interface WSHeaderOnMethodInspectionLogic {
             logIfEnabled(method.project, logger, "Validating @WSHeader '$headerName' on setter '${method.name}' with defaultValue='$defaultValue'")
             if (defaultValue.isNullOrEmpty()) {
                 logIfEnabled(method.project, logger, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty defaultValue.")
+
+                // Highlight the method itself
                 holder.registerProblem(
-                    defaultValueAttr,
+                    method.nameIdentifier ?: method,
                     MyBundle.message("inspection.wsheaderonmethod.error.invalid.setter.defaultvalue", headerName, method.name),
                     ProblemHighlightType.ERROR
                 )
+
+                // Also highlight the class/interface declaration
+                val classOrInterface = method.containingClass
+                val classElementToHighlight = classOrInterface?.nameIdentifier ?: classOrInterface
+                if (classElementToHighlight != null) {
+                    holder.registerProblem(
+                        classElementToHighlight,
+                        MyBundle.message("inspection.wsheaderonmethod.error.invalid.setter.defaultvalue", headerName, method.name),
+                        ProblemHighlightType.ERROR
+                    )
+                }
             }
         }
     }
+
 
     // Helper to get method headers (copied from previous logic)
     private fun getMethodHeaders(method: PsiMethod, project: Project): Map<String, PsiAnnotation> {

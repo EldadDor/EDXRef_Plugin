@@ -87,53 +87,58 @@ interface WSHeadersOnTypeInspectionLogic {
     private fun validateSingleTypeHeaderDefault(
         headerAnnotation: PsiAnnotation,
         holder: ProblemsHolder,
-        logger: Logger // Receive logger
+        logger: Logger
     ) {
         val headerName = getAnnotationStringAttribute(headerAnnotation, "name") ?: "[Unknown Name]"
         val defaultValue = getAnnotationStringAttribute(headerAnnotation, "defaultValue")
         logIfEnabled(headerAnnotation.project, logger, "Validating type @WSHeader '$headerName' with defaultValue='$defaultValue'")
 
-        if (defaultValue.isNullOrEmpty()) { // Check for null or empty string ""
+        if (defaultValue.isNullOrEmpty()) {
             logIfEnabled(headerAnnotation.project, logger, "ERROR: Type-level header '$headerName' has missing or empty defaultValue.")
-            val defaultValueAttr = headerAnnotation.findAttributeValue("defaultValue")
+
+            // Find the class/interface declaration to highlight
+            val classOrInterface = headerAnnotation.parent?.parent?.parent as? PsiClass
+            val elementToHighlight = classOrInterface?.nameIdentifier ?: classOrInterface ?: headerAnnotation
+
             holder.registerProblem(
-                defaultValueAttr ?: headerAnnotation, // Highlight defaultValue or whole annotation
+                elementToHighlight,
                 MyBundle.message("inspection.wsheadersontype.error.missing.defaultvalue", headerName),
                 ProblemHighlightType.ERROR
             )
         }
     }
-}
 
-// --- Java Inspection ---
-class WSHeadersOnTypeJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSHeadersOnTypeInspectionLogic {
-    override val log = logger<WSHeadersOnTypeJavaInspection>()
-    override fun getDisplayName(): String = MyBundle.message("inspection.wsheadersontype.displayname")
 
-    override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
-        return object : JavaElementVisitor() {
-            override fun visitClass(psiClass: PsiClass) { // Visit classes and interfaces
-                super.visitClass(psiClass)
-                validateTypeHeaders(psiClass.project, psiClass, holder) // Call specific logic
+    // --- Java Inspection ---
+    class WSHeadersOnTypeJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSHeadersOnTypeInspectionLogic {
+        override val log = logger<WSHeadersOnTypeJavaInspection>()
+        override fun getDisplayName(): String = MyBundle.message("inspection.wsheadersontype.displayname")
+
+        override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
+            return object : JavaElementVisitor() {
+                override fun visitClass(psiClass: PsiClass) { // Visit classes and interfaces
+                    super.visitClass(psiClass)
+                    validateTypeHeaders(psiClass.project, psiClass, holder) // Call specific logic
+                }
             }
         }
     }
-}
 
-// --- Kotlin Inspection ---
-class WSHeadersOnTypeKotlinInspection : AbstractKotlinInspection(), WSHeadersOnTypeInspectionLogic {
-    override val log = logger<WSHeadersOnTypeKotlinInspection>()
-    override fun getDisplayName(): String = MyBundle.message("inspection.wsheadersontype.displayname")
+    // --- Kotlin Inspection ---
+    class WSHeadersOnTypeKotlinInspection : AbstractKotlinInspection(), WSHeadersOnTypeInspectionLogic {
+        override val log = logger<WSHeadersOnTypeKotlinInspection>()
+        override fun getDisplayName(): String = MyBundle.message("inspection.wsheadersontype.displayname")
 
-    override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
-        return object : KtVisitorVoid() {
-            override fun visitClassOrObject(classOrObject: KtClassOrObject) { // Visit classes, objects, interfaces
-                super.visitClassOrObject(classOrObject)
-                val psiClass = classOrObject.toLightClass() // Get Java representation
-                if (psiClass != null) {
-                    validateTypeHeaders(classOrObject.project, psiClass, holder) // Call specific logic
-                } else {
-                    logIfEnabled(classOrObject.project, log, "Could not get LightClass for Kotlin element ${classOrObject.name}")
+        override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
+            return object : KtVisitorVoid() {
+                override fun visitClassOrObject(classOrObject: KtClassOrObject) { // Visit classes, objects, interfaces
+                    super.visitClassOrObject(classOrObject)
+                    val psiClass = classOrObject.toLightClass() // Get Java representation
+                    if (psiClass != null) {
+                        validateTypeHeaders(classOrObject.project, psiClass, holder) // Call specific logic
+                    } else {
+                        logIfEnabled(classOrObject.project, log, "Could not get LightClass for Kotlin element ${classOrObject.name}")
+                    }
                 }
             }
         }

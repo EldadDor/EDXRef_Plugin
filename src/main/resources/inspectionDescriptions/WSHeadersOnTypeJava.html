@@ -1,0 +1,20 @@
+<html>
+<body>
+<p>Validates <code>@WSHeader</code> annotations defined within the <code>@WSHeaders</code> container on consumer types.</p>
+<p>This inspection checks classes and interfaces that are annotated with <code>@WSConsumer</code> and implement/extend <code>WebserviceConsumer</code> or <code>PearlWebserviceConsumer</code>.</p>
+<p>It reports the following issue:</p>
+<ul>
+    <li><b>Error: Missing Default Value:</b> If a <code>@WSHeader</code> defined inside <code>@WSHeaders</code> on the type does not have a <code>defaultValue</code> attribute, or if the value is empty (<code>""</code>), an error is reported.</li>
+</ul>
+<p><b>Example:</b></p>
+<pre><code>
+@WSConsumer(url = "...")
+@WSHeaders({
+    @WSHeader(name = "X-Request-ID", defaultValue = "ID123"), // OK
+    @WSHeader(name = "Accept"), // ERROR: Missing defaultValue
+    @WSHeader(name = "Content-Type", defaultValue = "") // ERROR: Empty defaultValue
+})
+public interface MyConsumer extends WebserviceConsumer { }
+</code></pre>
+</body>
+</html>
