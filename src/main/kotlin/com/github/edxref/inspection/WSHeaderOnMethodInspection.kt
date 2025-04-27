@@ -107,9 +107,8 @@ interface WSHeaderOnMethodInspectionLogic {
             // Rule 2: Check for redundancy against type headers
             if (typeHeaders.containsKey(methodHeaderName)) {
                 logIfEnabled(project, log, "WARN: Redundant header '$methodHeaderName' on method '${method.name}' also defined on type '${containingClass.name}'")
-                val nameAttrValue = methodHeaderAnnotation.findAttributeValue("name")
                 holder.registerProblem(
-                    nameAttrValue ?: methodHeaderAnnotation,
+                    method.nameIdentifier ?: method,
                     MyBundle.message("inspection.wsheaderonmethod.warn.redundant.method.header", methodHeaderName),
                     ProblemHighlightType.WARNING
                 )

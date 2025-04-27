@@ -8,6 +8,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.util.InheritanceUtil
+import org.jetbrains.annotations.Nls
 import org.jetbrains.kotlin.asJava.toLightClass
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.*
@@ -109,6 +110,7 @@ interface InternalApiInspectionLogic {
 class InternalApiJavaInspection : AbstractBaseJavaLocalInspectionTool(), InternalApiInspectionLogic {
     override val log = logger<InternalApiJavaInspection>()
     override fun getDisplayName(): String = MyBundle.message("inspection.internalapi.displayname")
+    override fun getStaticDescription(): String = MyBundle.message("inspection.internalapi.description")
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
         return object : JavaElementVisitor() {

@@ -1,0 +1,57 @@
+<html>
+<body>
+<p>Validates the usage of the <code>@InternalApi</code> annotation.</p>
+<p>This inspection reports the following errors:</p>
+<ul>
+    <li><b>Error: @InternalApi on Interface:</b> The <code>@InternalApi</code> annotation should only be applied to classes, not interfaces. An error is reported on the annotation if it's found on an interface declaration.</li>
+    <li><b>Error: Class Implements @InternalApi Interface:</b> If a class implements an interface that is incorrectly marked with <code>@InternalApi</code>, an error is reported on the implementing class declaration.</li>
+    <li><b>Error: @InternalApi on Method in Non-@InternalApi Class:</b> If a method is marked with <code>@InternalApi</code>, but its containing class is *not* marked with <code>@InternalApi</code>, an error is reported on the method declaration.
+        Methods within an <code>@InternalApi</code> class are implicitly internal.
+    </li>
+</ul>
+<p>The fully qualified name of the <code>@InternalApi</code> annotation can be configured in the plugin settings.</p>
+<p><b>Example (Invalid):</b></p>
+<pre><code>
+// ERROR: @InternalApi should not be on an interface
+@InternalApi
+public interface MyInternalService {
+    void doSomethingInternal();
+}
+
+// ERROR: Implements an interface marked (incorrectly) with @InternalApi
+public class MyServiceImpl implements MyInternalService {
+    @Override
+    public void doSomethingInternal() { /* ... */ }
+}
+
+public class MyPublicClass {
+    // ERROR: Method marked @InternalApi but class is not
+    @InternalApi
+    public void internalHelper() { /* ... */ }
+
+    public void publicMethod() { /* ... */ }
+}
+</code></pre>
+<p><b>Example (Valid):</b></p>
+<pre><code>
+public interface MyPublicService {
+    void doSomething();
+}
+
+@InternalApi // OK: On a class
+public class MyInternalHelper {
+    public void help() { /* ... */ } // Implicitly internal
+
+    // OK: Explicitly marked, but class is already internal
+    @InternalApi
+    public void anotherInternalMethod() { /* ... */ }
+}
+
+// OK: Implements a regular interface
+public class MyPublicServiceImpl implements MyPublicService {
+     @Override
+     public void doSomething() { /* ... */ }
+}
+</code></pre>
+</body>
+</html>

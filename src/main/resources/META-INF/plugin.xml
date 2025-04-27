@@ -26,6 +26,7 @@
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="EDXRef Notifications" displayType="BALLOON" bundle="messages.MyBundle" key="notification.group.edxref.notifications"/>
         <localInspection
                 language="kotlin"
                 shortName="WSConsumerValidationKotlin"
@@ -129,8 +130,21 @@
                 displayName="WSConsumer Settings"
                 instance="com.github.edxref.settings.WSConsumerSettingsConfigurable"
                 parentId="language" order="last"/>
-    </extensions>
 
+
+    </extensions>
+    <actions>
+        <!-- ... other actions ... -->
+
+        <action id="com.github.edxref.actions.ScanInternalApiAction"
+                class="com.github.edxref.actions.ScanInternalApiAction"
+                text="Scan for @InternalApi Usages (Java)"
+                description="Scans the project for Java usages of the @InternalApi annotation.">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <!-- You could also add it to AnalyzeMenu, etc. -->
+        </action>
+
+    </actions>
 
     <!--<applicationListeners>
         <listener class="com.github.edxref.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
