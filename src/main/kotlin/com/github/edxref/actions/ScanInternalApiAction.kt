@@ -113,15 +113,13 @@ class ScanInternalApiAction : AnAction() {
                     }
 
                     // Define how the UsageView should look
-                    val presentation = UsageViewPresentation().apply {
-                        val presentation = UsageViewPresentation()
-                        presentation.tabText = "@InternalApi Usages"
-                        presentation.toolwindowTitle = "Usages of @InternalApi ($internalApiFqn)"
-                        presentation.setUsagesString("usages of @InternalApi") // <-- Use setter method
-                        presentation.scopeText = searchScope.displayName // e.g., "Project Files"
-                        presentation.isOpenInNewTab = false // Reuse existing tab if possible
-                        presentation.isCodeUsages = true // Show code usages
-                    }
+                    val presentation = UsageViewPresentation()
+                    presentation.tabText = "@InternalApi Usages"
+                    presentation.toolwindowTitle = "Usages of @InternalApi ($internalApiFqn)"
+                    presentation.setUsagesString("usages of @InternalApi")
+                    presentation.scopeText = searchScope.displayName
+                    presentation.isOpenInNewTab = false
+                    presentation.isCodeUsages = true
 
                     // Show the standard UsageView tool window
                     UsageViewManager.getInstance(project).showUsages(
