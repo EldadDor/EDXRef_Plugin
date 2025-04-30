@@ -1,4 +1,5 @@
 package com.github.edxref.query.gutter;
+
 import com.intellij.codeInsight.daemon.LineMarkerInfo
 import com.intellij.codeInsight.daemon.LineMarkerProvider
 import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder
@@ -13,6 +14,8 @@ import com.intellij.psi.xml.XmlAttributeValue
 import com.intellij.psi.xml.XmlTag
 import com.github.edxref.icons.EDXRefIcons
 import com.github.edxref.query.util.QueryIdResolver
+import com.intellij.psi.xml.XmlToken
+import com.intellij.psi.xml.XmlTokenType
 
 class XmlQueryLineMarkerProvider : LineMarkerProvider {
 
@@ -40,37 +43,31 @@ class XmlQueryLineMarkerProvider : LineMarkerProvider {
                                 .setTargets(targetInterface)
                                 .setTooltipText("Navigate to Query Interface definition")
                                 .setAlignment(GutterIconRenderer.Alignment.LEFT)
-                                // Provide a Supplier lambda: () -> PsiTargetPresentationRenderer
                                 .setTargetRenderer {
-                                    // This lambda takes NO arguments.
-                                    // Return an instance of an anonymous class EXTENDING PsiTargetPresentationRenderer
-                                    object : PsiTargetPresentationRenderer<PsiElement>() { // Note the () for class extension
-                                        // Override the modern presentation method
+                                    object : PsiTargetPresentationRenderer<PsiElement>() {
                                         override fun getPresentation(element: PsiElement): TargetPresentation {
-                                            // Determine the text for the target element
                                             val text = (element as? PsiClass)?.name
                                                 ?: element.text
                                                 ?: "Target Interface"
-
-                                            // Build and return the TargetPresentation
-                                            // You can customize icon, location text etc. here too if needed
                                             return TargetPresentation.builder(text).presentation()
                                         }
-
-                                        // Fallback/alternative: Override older methods if needed,
-                                        // but getPresentation is likely sufficient.
-                                        // override fun getElementText(element: PsiElement): String {
-                                        //     return (element as? PsiClass)?.name ?: element.text ?: "Target Interface"
-                                        // }
                                     }
                                 }
 
-                            val markerInfo = builder.createLineMarkerInfo(element)
-                            result.add(markerInfo)
+                            // --- FIX: Attach to the leaf token, not the XmlAttributeValue itself ---
+                            val valueToken = element.children
+                                .filterIsInstance<XmlToken>()
+                                .firstOrNull { it.tokenType == XmlTokenType.XML_ATTRIBUTE_VALUE_TOKEN }
+
+                            if (valueToken != null) {
+                                val markerInfo = builder.createLineMarkerInfo(valueToken)
+                                result.add(markerInfo)
+                            }
                         }
                     }
                 }
             }
         }
+
     }
 }

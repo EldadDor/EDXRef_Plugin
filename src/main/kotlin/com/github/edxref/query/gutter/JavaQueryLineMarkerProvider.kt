@@ -8,6 +8,7 @@ import com.intellij.codeInsight.daemon.LineMarkerProvider
 import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder // Import Builder
 import com.intellij.codeInsight.navigation.impl.PsiTargetPresentationRenderer
 import com.intellij.openapi.editor.markup.GutterIconRenderer
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
@@ -22,6 +23,10 @@ class JavaQueryLineMarkerProvider : LineMarkerProvider {
     // Implement the required getLineMarkerInfo method
     override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
         // Target the class name identifier for better positioning
+        if (DumbService.isDumb(element.project)) {
+            // Index is not ready, skip providing line markers
+            return null
+        }
         if (element is PsiIdentifier && element.parent is PsiClass) {
             val psiClass = element.parent as PsiClass
             if (psiClass.isInterface) { // Ensure it's an interface
