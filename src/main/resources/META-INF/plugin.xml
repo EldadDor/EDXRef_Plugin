@@ -29,12 +29,13 @@
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="EDXRef Notifications" displayType="BALLOON" bundle="messages.MyBundle" key="notification.group.edxref.notifications"/>
 
-        <projectService serviceImplementation="com.github.edxref.query.cache.QueryIndexService"/>
         <codeInsight.lineMarkerProvider language="JAVA"
                                         implementationClass="com.github.edxref.query.gutter.JavaQueryLineMarkerProvider"/>
         <codeInsight.lineMarkerProvider language="XML"
                                         implementationClass="com.github.edxref.query.gutter.XmlQueryLineMarkerProvider"/>
 
+        <!--<projectService
+                serviceImplementation="com.github.edxref.query.cache.QueryIndexService" />-->
         <localInspection
                 language="kotlin"
                 shortName="WSConsumerValidationKotlin"
@@ -138,7 +139,12 @@
                 displayName="WSConsumer Settings"
                 instance="com.github.edxref.settings.WSConsumerSettingsConfigurable"
                 parentId="language" order="last"/>
-
+        <projectConfigurable
+                id="com.github.edxref.query.settings.QueryRefSettingsConfigurable"
+                displayName="QueryRef Settings"
+                instance="com.github.edxref.query.settings.QueryRefSettingsConfigurable"
+                parentId="language"
+                order="last"/>
 
     </extensions>
     <actions>
