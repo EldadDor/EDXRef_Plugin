@@ -2,6 +2,7 @@
 package com.github.edxref.query.cache
 
 import com.github.edxref.query.index.SQLQueryFileIndexer
+import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
@@ -20,6 +21,10 @@ import com.intellij.util.indexing.FileBasedIndex
 @Service(Service.Level.PROJECT)
 class QueryIndexService(private val project: Project) {
 
+    private fun getSettings(project: Project) = project.getQueryRefSettings()
+    private fun getSqlRefAnnotationFqn(project: Project) = getSettings(project).sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
+    private fun getSqlRefAnnotationAttributeName(project: Project) = getSettings(project).sqlRefAnnotationAttributeName.ifBlank { "refId" }
+
     companion object {
         fun getInstance(project: Project): QueryIndexService =
             project.getService(QueryIndexService::class.java)
@@ -30,14 +35,14 @@ class QueryIndexService(private val project: Project) {
         CachedValuesManager.getManager(project).createCachedValue {
             val resultMap = mutableMapOf<String, SmartPsiElementPointer<PsiClass>>()
             val psiFacade = JavaPsiFacade.getInstance(project)
-            val annotationClass = psiFacade.findClass("SQLRef", GlobalSearchScope.allScope(project))
+            val annotationClass = psiFacade.findClass(getSqlRefAnnotationFqn(project), GlobalSearchScope.allScope(project))
 
             if (annotationClass != null) {
                 val candidates = AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.projectScope(project)).findAll()
                 val pointerManager = SmartPointerManager.getInstance(project)
                 candidates.forEach { psiClass ->
-                    psiClass.annotations.firstOrNull { ann -> ann.qualifiedName == "SQLRef" }?.let { ann ->
-                        ann.findAttributeValue("refId")?.text?.replace("\"", "")?.let { queryId ->
+                    psiClass.annotations.firstOrNull { ann -> ann.qualifiedName == getSqlRefAnnotationFqn(project) }?.let { ann ->
+                        ann.findAttributeValue(getSqlRefAnnotationAttributeName(project))?.text?.replace("\"", "")?.let { queryId ->
                             // Store a smart pointer to handle PSI changes
                             resultMap[queryId] = pointerManager.createSmartPsiElementPointer(psiClass)
                         }

@@ -1,17 +1,23 @@
 package com.github.edxref.query.gutter
 
 import com.github.edxref.icons.EDXRefIcons // Import custom icons
+import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
 import com.github.edxref.query.util.QueryIdResolver
 import com.intellij.codeInsight.daemon.LineMarkerInfo
 import com.intellij.codeInsight.daemon.LineMarkerProvider
 import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder // Import Builder
 import com.intellij.codeInsight.navigation.impl.PsiTargetPresentationRenderer
 import com.intellij.openapi.editor.markup.GutterIconRenderer
+import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiIdentifier // Import PsiIdentifier
 
 class JavaQueryLineMarkerProvider : LineMarkerProvider {
+
+    private fun getSettings(project: Project) = project.getQueryRefSettings()
+    private fun getSqlRefAnnotationFqn(project: Project) = getSettings(project).sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
+    private fun getSqlRefAnnotationAttributeName(project: Project) = getSettings(project).sqlRefAnnotationAttributeName.ifBlank { "refId" }
 
     // Implement the required getLineMarkerInfo method
     override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
@@ -19,8 +25,8 @@ class JavaQueryLineMarkerProvider : LineMarkerProvider {
         if (element is PsiIdentifier && element.parent is PsiClass) {
             val psiClass = element.parent as PsiClass
             if (psiClass.isInterface) { // Ensure it's an interface
-                val ann = psiClass.annotations.firstOrNull { it.qualifiedName == "SQLRef" }
-                val refIdLiteral = ann?.findAttributeValue("refId")
+                val ann = psiClass.annotations.firstOrNull { it.qualifiedName == getSqlRefAnnotationFqn(element.project) }
+                val refIdLiteral = ann?.findAttributeValue(getSqlRefAnnotationAttributeName(element.project))
                 val refId = refIdLiteral?.text?.replace("\"", "")
 
                 if (refId != null) {
