@@ -19,7 +19,6 @@
     ]]></description>
 
 
-
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
     <depends>com.intellij.modules.lang</depends>
@@ -29,6 +28,13 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="EDXRef Notifications" displayType="BALLOON" bundle="messages.MyBundle" key="notification.group.edxref.notifications"/>
+
+        <projectService serviceImplementation="com.github.edxref.query.cache.QueryIndexService"/>
+        <codeInsight.lineMarkerProvider language="JAVA"
+                                        implementationClass="com.github.edxref.query.gutter.JavaQueryLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="XML"
+                                        implementationClass="com.github.edxref.query.gutter.XmlQueryLineMarkerProvider"/>
+
         <localInspection
                 language="kotlin"
                 shortName="WSConsumerValidationKotlin"

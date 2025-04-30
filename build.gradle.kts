@@ -97,6 +97,7 @@ tasks {
         )
     }
 }
+
 tasks.register<Copy>("copyJarToDist") {
     group = "build" // Optional: Group the task under the "build" category
     description = "Copies the jar artifact to the dist folder"
@@ -118,6 +119,7 @@ tasks.test {
     systemProperty("ide.allow.document.model.changes.in.highlighting", "true")
     systemProperty("kotlin.script.disable.auto.import", "true")
 }
+
 // Configure Gradle Kover Plugin - read more: https://github.com/Kotlin/kotlinx-kover#configuration
 kover {
     reports {
