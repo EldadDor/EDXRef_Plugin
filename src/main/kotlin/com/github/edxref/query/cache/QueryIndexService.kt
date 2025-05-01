@@ -10,6 +10,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.DumbService // <<< ADDED IMPORT
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.*
@@ -27,7 +28,7 @@ import com.intellij.util.indexing.FileBasedIndex
 class QueryIndexService(private val project: Project) {
 
     // Use standard IntelliJ logger
-    private val log: Logger = logger<QueryIndexService>() // Initialize directly
+    private val log: Logger = logger<QueryIndexService>() // Use direct initialization
 
     // Removed logIfEnabled helper - rely on standard log configuration
 
@@ -36,50 +37,60 @@ class QueryIndexService(private val project: Project) {
     private fun getSqlRefAnnotationAttributeName(project: Project) = getSettings(project).sqlRefAnnotationAttributeName.ifBlank { "refId" }
 
     companion object {
-        fun getInstance(project: Project): QueryIndexService =
-            project.getService(QueryIndexService::class.java)
+        fun getInstance(project: Project): QueryIndexService = project.getService(QueryIndexService::class.java)
     }
 
     // Cache: Query ID -> SmartPointer<PsiClass>
-    private val interfaceCache: CachedValue<Map<String, SmartPsiElementPointer<PsiClass>>> =
-        CachedValuesManager.getManager(project).createCachedValue {
-            log.info("Building/Rebuilding interface cache...") // Log cache build start
-            val resultMap = mutableMapOf<String, SmartPsiElementPointer<PsiClass>>()
-            val psiFacade = JavaPsiFacade.getInstance(project)
-            val annotationFqn = getSqlRefAnnotationFqn(project)
-            val attributeName = getSqlRefAnnotationAttributeName(project)
-            val annotationClass = psiFacade.findClass(annotationFqn, GlobalSearchScope.allScope(project))
+    private val interfaceCache: CachedValue<Map<String, SmartPsiElementPointer<PsiClass>>> = CachedValuesManager.getManager(project).createCachedValue {
+        log.info("Building/Rebuilding interface cache...") // Log cache build start
+        val resultMap = mutableMapOf<String, SmartPsiElementPointer<PsiClass>>()
+        val psiFacade = JavaPsiFacade.getInstance(project)
+        val annotationFqn = getSqlRefAnnotationFqn(project)
+        val attributeName = getSqlRefAnnotationAttributeName(project)
+        val annotationClass = psiFacade.findClass(annotationFqn, GlobalSearchScope.allScope(project))
 
-            if (annotationClass != null) {
-                log.debug("Found annotation class: $annotationFqn")
-                val candidates = AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.projectScope(project)).findAll()
-                log.debug("Found ${candidates.size} potential candidates annotated with $annotationFqn.")
-                val pointerManager = SmartPointerManager.getInstance(project)
-                candidates.forEach { psiClass ->
-                    psiClass.annotations.firstOrNull { ann -> ann.qualifiedName == annotationFqn }?.let { ann ->
-                        ann.findAttributeValue(attributeName)?.text?.replace("\"", "")?.let { queryId ->
-                            log.debug("Caching interface '${psiClass.name}' for queryId '$queryId'") // Log item add
-                            resultMap[queryId] = pointerManager.createSmartPsiElementPointer(psiClass)
-                        }
+        if (annotationClass != null) {
+            log.debug("Found annotation class: $annotationFqn")
+            val candidates = AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.projectScope(project)).findAll()
+            log.debug("Found ${candidates.size} potential candidates annotated with $annotationFqn.")
+            val pointerManager = SmartPointerManager.getInstance(project)
+            candidates.forEach { psiClass ->
+                psiClass.annotations.firstOrNull { ann -> ann.qualifiedName == annotationFqn }?.let { ann ->
+                    ann.findAttributeValue(attributeName)?.text?.replace("\"", "")?.let { queryId ->
+                        log.debug("Caching interface '${psiClass.name}' for queryId '$queryId'") // Log item add
+                        resultMap[queryId] = pointerManager.createSmartPsiElementPointer(psiClass)
                     }
                 }
-            } else {
-                log.warn("Annotation class '$annotationFqn' not found. Interface cache might be incomplete.") // Log warning if class not found
             }
-            log.info("Interface cache build complete. Found ${resultMap.size} entries.") // Log cache build end
-            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
+        } else {
+            log.warn("Annotation class '$annotationFqn' not found. Interface cache might be incomplete.") // Log warning if class not found
         }
+        log.info("Interface cache build complete. Found ${resultMap.size} entries.") // Log cache build end
+        CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
+    }
 
     // Cache: Query ID -> SmartPointer<XmlTag>
-    private val xmlTagCache: CachedValue<Map<String, SmartPsiElementPointer<XmlTag>>> =
-        CachedValuesManager.getManager(project).createCachedValue {
-            log.info("Building/Rebuilding XML tag cache...") // Log cache build start
-            val resultMap = mutableMapOf<String, SmartPsiElementPointer<XmlTag>>()
-            val index = FileBasedIndex.getInstance()
-            val psiManager = PsiManager.getInstance(project)
-            val pointerManager = SmartPointerManager.getInstance(project)
-            val searchScope = GlobalSearchScope.projectScope(project)
-            val allKeys = index.getAllKeys(SQLQueryFileIndexer.KEY, project)
+    private val xmlTagCache: CachedValue<Map<String, SmartPsiElementPointer<XmlTag>>> = CachedValuesManager.getManager(project).createCachedValue {
+        log.info("Building/Rebuilding XML tag cache...") // Log cache build start
+        val resultMap = mutableMapOf<String, SmartPsiElementPointer<XmlTag>>()
+        val dumbService = DumbService.getInstance(project) // <<< GET DUMB SERVICE INSTANCE
+
+        // *** ADD DUMB MODE CHECK HERE ***
+        if (dumbService.isDumb) {
+            log.warn("XML tag cache computation skipped: Project is in dumb mode.")
+            // Return empty map and depend on DumbService to recompute when indexing finishes
+            return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService)
+        }
+        // *** END DUMB MODE CHECK ***
+
+        // Proceed only if not in dumb mode
+        val index = FileBasedIndex.getInstance()
+        val psiManager = PsiManager.getInstance(project)
+        val pointerManager = SmartPointerManager.getInstance(project)
+        val searchScope = GlobalSearchScope.projectScope(project)
+
+        try { // Wrap index access in try-catch just in case
+            val allKeys = index.getAllKeys(SQLQueryFileIndexer.KEY, project) // <<< Access index only if not dumb
             log.debug("Found ${allKeys.size} query IDs in the index.")
 
             for (queryId in allKeys) {
@@ -109,10 +120,17 @@ class QueryIndexService(private val project: Project) {
 
                 tagPointer?.let { resultMap[queryId] = it }
             }
-            log.info("XML tag cache build complete. Found ${resultMap.size} entries.") // Log cache build end
-//            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT, FileBasedIndex.getInstance())
-            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
+        } catch (e: IllegalStateException) {
+            // Log the exception if it still somehow occurs despite the dumb check
+            log.error("IllegalStateException during index access in xmlTagCache computation, even after dumb check.", e)
+            // Return empty map to avoid further issues in this computation cycle
+            return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService) // Depend on dumb service to retry
         }
+
+        log.info("XML tag cache build complete. Found ${resultMap.size} entries.") // Log cache build end
+        // Depend ONLY on PSI modifications when not in dumb mode.
+        CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
+    }
 
 
     fun findInterfaceById(queryId: String): PsiClass? {
@@ -124,6 +142,7 @@ class QueryIndexService(private val project: Project) {
 
     fun findXmlTagById(queryId: String): XmlTag? {
         log.debug("Looking up XML tag for queryId '$queryId'") // Log lookup start
+        // This call might trigger the cache computation if needed
         val result = xmlTagCache.value[queryId]?.element
         log.debug("XML tag lookup for queryId '$queryId' result: ${if (result != null) "Found in file (${result.containingFile.virtualFile?.path})" else "Not Found"}") // Log lookup result
         return result
