@@ -1,9 +1,14 @@
 // src/main/kotlin/com/github/edxref/query/cache/QueryIndexService.kt
 package com.github.edxref.query.cache
 
+// Keep existing imports...
 import com.github.edxref.query.index.SQLQueryFileIndexer
 import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
+// Remove WSConsumerSettings import if only used for logIfEnabled
+// import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -21,6 +26,11 @@ import com.intellij.util.indexing.FileBasedIndex
 @Service(Service.Level.PROJECT)
 class QueryIndexService(private val project: Project) {
 
+    // Use standard IntelliJ logger
+    private val log: Logger = logger<QueryIndexService>() // Initialize directly
+
+    // Removed logIfEnabled helper - rely on standard log configuration
+
     private fun getSettings(project: Project) = project.getQueryRefSettings()
     private fun getSqlRefAnnotationFqn(project: Project) = getSettings(project).sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
     private fun getSqlRefAnnotationAttributeName(project: Project) = getSettings(project).sqlRefAnnotationAttributeName.ifBlank { "refId" }
@@ -33,72 +43,88 @@ class QueryIndexService(private val project: Project) {
     // Cache: Query ID -> SmartPointer<PsiClass>
     private val interfaceCache: CachedValue<Map<String, SmartPsiElementPointer<PsiClass>>> =
         CachedValuesManager.getManager(project).createCachedValue {
+            log.info("Building/Rebuilding interface cache...") // Log cache build start
             val resultMap = mutableMapOf<String, SmartPsiElementPointer<PsiClass>>()
             val psiFacade = JavaPsiFacade.getInstance(project)
-            val annotationClass = psiFacade.findClass(getSqlRefAnnotationFqn(project), GlobalSearchScope.allScope(project))
+            val annotationFqn = getSqlRefAnnotationFqn(project)
+            val attributeName = getSqlRefAnnotationAttributeName(project)
+            val annotationClass = psiFacade.findClass(annotationFqn, GlobalSearchScope.allScope(project))
 
             if (annotationClass != null) {
+                log.debug("Found annotation class: $annotationFqn")
                 val candidates = AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.projectScope(project)).findAll()
+                log.debug("Found ${candidates.size} potential candidates annotated with $annotationFqn.")
                 val pointerManager = SmartPointerManager.getInstance(project)
                 candidates.forEach { psiClass ->
-                    psiClass.annotations.firstOrNull { ann -> ann.qualifiedName == getSqlRefAnnotationFqn(project) }?.let { ann ->
-                        ann.findAttributeValue(getSqlRefAnnotationAttributeName(project))?.text?.replace("\"", "")?.let { queryId ->
-                            // Store a smart pointer to handle PSI changes
+                    psiClass.annotations.firstOrNull { ann -> ann.qualifiedName == annotationFqn }?.let { ann ->
+                        ann.findAttributeValue(attributeName)?.text?.replace("\"", "")?.let { queryId ->
+                            log.debug("Caching interface '${psiClass.name}' for queryId '$queryId'") // Log item add
                             resultMap[queryId] = pointerManager.createSmartPsiElementPointer(psiClass)
                         }
                     }
                 }
+            } else {
+                log.warn("Annotation class '$annotationFqn' not found. Interface cache might be incomplete.") // Log warning if class not found
             }
-            // Depend on project-wide PSI changes
+            log.info("Interface cache build complete. Found ${resultMap.size} entries.") // Log cache build end
             CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
         }
 
     // Cache: Query ID -> SmartPointer<XmlTag>
     private val xmlTagCache: CachedValue<Map<String, SmartPsiElementPointer<XmlTag>>> =
         CachedValuesManager.getManager(project).createCachedValue {
+            log.info("Building/Rebuilding XML tag cache...") // Log cache build start
             val resultMap = mutableMapOf<String, SmartPsiElementPointer<XmlTag>>()
             val index = FileBasedIndex.getInstance()
             val psiManager = PsiManager.getInstance(project)
             val pointerManager = SmartPointerManager.getInstance(project)
             val searchScope = GlobalSearchScope.projectScope(project)
             val allKeys = index.getAllKeys(SQLQueryFileIndexer.KEY, project)
+            log.debug("Found ${allKeys.size} query IDs in the index.")
 
             for (queryId in allKeys) {
+                log.debug("Processing queryId '$queryId' for XML tag cache.")
                 val filePaths = index.getValues(SQLQueryFileIndexer.KEY, queryId, searchScope)
 
-                // Use firstNotNullOfOrNull to find the first valid tag and create a pointer
                 val tagPointer: SmartPsiElementPointer<XmlTag>? = filePaths.firstNotNullOfOrNull { filePath ->
                     val vFile = LocalFileSystem.getInstance().findFileByPath(filePath)
-                    if (vFile == null || !searchScope.contains(vFile)) return@firstNotNullOfOrNull null // Skip if file not found or out of scope
+                    if (vFile == null || !searchScope.contains(vFile)) {
+                        log.debug("File path '$filePath' for queryId '$queryId' not found or out of scope. Skipping.") // Log skip
+                        return@firstNotNullOfOrNull null
+                    }
 
                     val psiFile = psiManager.findFile(vFile)
                     if (psiFile is XmlFile) {
                         psiFile.rootTag?.findSubTags("query")?.firstOrNull { tag ->
                             tag.getAttributeValue("id") == queryId
                         }?.let { foundTag ->
-                            // Create pointer if tag found
+                            log.debug("Found XML tag for queryId '$queryId' in file '${vFile.path}'. Caching pointer.") // Log item add
                             pointerManager.createSmartPsiElementPointer(foundTag)
-                        } // Returns SmartPsiElementPointer<XmlTag>?
+                        }
                     } else {
-                        null // Not an XML file
+                        log.warn("File '${vFile.path}' for queryId '$queryId' is not an XML file. Skipping.") // Log warning for non-XML
+                        null
                     }
-                } // End of firstNotNullOfOrNull lambda
+                }
 
-                // If a pointer was created, add it to the map
                 tagPointer?.let { resultMap[queryId] = it }
             }
-            // Depend on project-wide PSI changes AND changes to the index itself
+            log.info("XML tag cache build complete. Found ${resultMap.size} entries.") // Log cache build end
             CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT, FileBasedIndex.getInstance())
         }
 
 
     fun findInterfaceById(queryId: String): PsiClass? {
-        // Retrieve from cache, dereference the smart pointer
-        return interfaceCache.value[queryId]?.element
+        log.debug("Looking up interface for queryId '$queryId'") // Log lookup start
+        val result = interfaceCache.value[queryId]?.element
+        log.debug("Interface lookup for queryId '$queryId' result: ${if (result != null) "Found (${result.name})" else "Not Found"}") // Log lookup result
+        return result
     }
 
     fun findXmlTagById(queryId: String): XmlTag? {
-        // Retrieve from cache, dereference the smart pointer
-        return xmlTagCache.value[queryId]?.element
+        log.debug("Looking up XML tag for queryId '$queryId'") // Log lookup start
+        val result = xmlTagCache.value[queryId]?.element
+        log.debug("XML tag lookup for queryId '$queryId' result: ${if (result != null) "Found in file (${result.containingFile.virtualFile?.path})" else "Not Found"}") // Log lookup result
+        return result
     }
 }
