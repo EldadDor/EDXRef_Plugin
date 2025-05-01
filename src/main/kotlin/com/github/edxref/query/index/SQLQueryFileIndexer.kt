@@ -34,8 +34,10 @@ class SQLQueryFileIndexer : FileBasedIndexExtension<String, String>() {
 
     // Filter: Only index specific XML files
     override fun getInputFilter(): FileBasedIndex.InputFilter {
+        log.debug("InputFilter Called.") // Log accepted files
         return FileBasedIndex.InputFilter { file: VirtualFile ->
             // 1. Check file type efficiently
+            log.debug("InputFilter Scan file: $file") // Log accepted files
             if (file.fileType != com.intellij.ide.highlighter.XmlFileType.INSTANCE) {
                 // log.trace("InputFilter skipping non-XML: ${file.path}") // Use trace if needed, debug might be too verbose
                 return@InputFilter false
