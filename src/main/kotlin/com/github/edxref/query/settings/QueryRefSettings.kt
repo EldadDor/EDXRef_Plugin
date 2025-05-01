@@ -21,8 +21,8 @@ class QueryRefSettings : PersistentStateComponent<QueryRefSettings.State> {
     )
 
     private var state = State()
-    override fun getState(): QueryRefSettings.State = state
-    override fun loadState(state: QueryRefSettings.State) {
+    override fun getState(): State = state
+    override fun loadState(state: State) {
         this.state = state
     }
 

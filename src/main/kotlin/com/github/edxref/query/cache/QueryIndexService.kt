@@ -110,7 +110,8 @@ class QueryIndexService(private val project: Project) {
                 tagPointer?.let { resultMap[queryId] = it }
             }
             log.info("XML tag cache build complete. Found ${resultMap.size} entries.") // Log cache build end
-            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT, FileBasedIndex.getInstance())
+//            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT, FileBasedIndex.getInstance())
+            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
         }
 
 

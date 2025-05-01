@@ -1,63 +1,84 @@
-package com.github.edxref.query.gutter
+package com.github.edxref.query.gutter // Or your package
 
-import com.github.edxref.icons.EDXRefIcons // Import custom icons
+import com.github.edxref.icons.EDXRefIcons
+import com.github.edxref.query.cache.QueryIndexService
+import com.github.edxref.query.settings.QueryRefSettings
 import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
-import com.github.edxref.query.util.QueryIdResolver
 import com.intellij.codeInsight.daemon.LineMarkerInfo
 import com.intellij.codeInsight.daemon.LineMarkerProvider
-import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder // Import Builder
-import com.intellij.codeInsight.navigation.impl.PsiTargetPresentationRenderer
+import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.openapi.project.DumbService
-import com.intellij.openapi.project.Project
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiIdentifier // Import PsiIdentifier
+import com.intellij.psi.*
+import com.intellij.psi.util.PsiTreeUtil
 
 class JavaQueryLineMarkerProvider : LineMarkerProvider {
 
-    private fun getSettings(project: Project) = project.getQueryRefSettings()
-    private fun getSqlRefAnnotationFqn(project: Project) = getSettings(project).sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
-    private fun getSqlRefAnnotationAttributeName(project: Project) = getSettings(project).sqlRefAnnotationAttributeName.ifBlank { "refId" }
+    private val log = logger<JavaQueryLineMarkerProvider>()
 
-    // Implement the required getLineMarkerInfo method
     override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
-        // Target the class name identifier for better positioning
-        if (DumbService.isDumb(element.project)) {
-            // Index is not ready, skip providing line markers
-            return null
+        // Handled by collectSlowLineMarkers
+        return null
+    }
+
+    override fun collectSlowLineMarkers(
+        elements: List<PsiElement>,
+        result: MutableCollection<in LineMarkerInfo<*>>
+    ) {
+        if (elements.isEmpty() || DumbService.isDumb(elements.first().project)) {
+            log.debug("Skipping Java markers: No elements or in dumb mode.")
+            return
         }
-        if (element is PsiIdentifier && element.parent is PsiClass) {
-            val psiClass = element.parent as PsiClass
-            if (psiClass.isInterface) { // Ensure it's an interface
-                val ann = psiClass.annotations.firstOrNull { it.qualifiedName == getSqlRefAnnotationFqn(element.project) }
-                val refIdLiteral = ann?.findAttributeValue(getSqlRefAnnotationAttributeName(element.project))
-                val refId = refIdLiteral?.text?.replace("\"", "")
 
-                if (refId != null) {
-                    // Resolve the target directly here
-                    val targetXmlTag = QueryIdResolver.resolveQueryXml(refId, element.project)
+        val project = elements.first().project
+        val settings = project.getQueryRefSettings().state
+        val annotationFqn = settings.sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" } // Use default if blank
+        val attributeName = settings.sqlRefAnnotationAttributeName.ifBlank { "refId" } // Use default if blank
+        val queryIndexService = QueryIndexService.getInstance(project)
 
-                    // If a target is found, create the marker using the builder
-                    if (targetXmlTag != null) {
-                        val builder = NavigationGutterIconBuilder
-                            .create(EDXRefIcons.JAVA_TO_XML) // Use custom icon
-                            // Pass the single target directly (uses vararg overload)
-                            .setTargets(targetXmlTag)
-                            .setTooltipText("Navigate to SQL Query XML definition")
-                            .setAlignment(GutterIconRenderer.Alignment.LEFT)
-                            // Set the anchor element for the icon (the class name identifier)
-                            .setTargetRenderer { element as PsiTargetPresentationRenderer<PsiElement>? } // Optional: Customize how target is shown in popup
+        log.debug("Checking ${elements.size} elements for Java line markers. Annotation: $annotationFqn, Attribute: $attributeName")
 
-                        // Create the marker anchored to the PsiIdentifier (element)
-                        return builder.createLineMarkerInfo(element)
+        for (element in elements) {
+            // We need to attach to a leaf element, often the annotation name identifier
+            if (element is PsiIdentifier) {
+                val annotation = PsiTreeUtil.getParentOfType(element, PsiAnnotation::class.java)
+                // Check if it's the correct annotation by FQN
+                if (annotation != null && annotation.qualifiedName == annotationFqn) {
+                    log.debug("Found potential annotation '${annotation.text}' attached to identifier '${element.text}'")
+
+                    // Extract the query ID from the specified attribute
+                    val queryId = annotation.findAttributeValue(attributeName)?.text?.replace("\"", "")
+
+                    if (queryId != null && queryId.isNotBlank()) {
+                        log.debug("Extracted queryId '$queryId' from annotation.")
+
+                        // Attempt to find the corresponding XML tag using the cache service
+                        val targetXmlTag: PsiElement? = queryIndexService.findXmlTagById(queryId)
+
+                        if (targetXmlTag != null) {
+                            log.debug("Successfully found target XML tag for queryId '$queryId': ${targetXmlTag.text}")
+                            // Build the marker
+                            val builder = NavigationGutterIconBuilder
+                                .create(EDXRefIcons.JAVA_TO_XML) // Use appropriate icon
+                                .setTargets(targetXmlTag)
+                                .setTooltipText("Navigate to Query XML definition")
+                                .setAlignment(GutterIconRenderer.Alignment.LEFT)
+                            // No need for setTargetRenderer if default presentation is okay
+
+                            // Create marker info, attached to the leaf element (the annotation identifier)
+                            val markerInfo = builder.createLineMarkerInfo(element)
+                            result.add(markerInfo)
+                            log.debug("Added line marker for queryId '$queryId'")
+                        } else {
+                            // Log why the marker wasn't created
+                            log.debug("Could not find target XML tag for queryId '$queryId'. No marker added.")
+                        }
+                    } else {
+                        log.debug("Could not extract valid queryId from attribute '$attributeName' in annotation '${annotation.text}'.")
                     }
                 }
             }
         }
-        // Return null if no marker should be created for this element
-        return null
     }
-
-    // No need for collectSlowLineMarkers unless you want batch processing
 }
