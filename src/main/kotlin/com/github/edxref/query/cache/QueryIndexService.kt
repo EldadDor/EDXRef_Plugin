@@ -23,6 +23,7 @@ import com.intellij.psi.util.CachedValue
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.PsiModificationTracker
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.xml.XmlFile
 import com.intellij.psi.xml.XmlTag
 import com.intellij.util.indexing.FileBasedIndex
@@ -137,42 +138,88 @@ class QueryIndexService(private val project: Project) {
         CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
     }
 
-    private val queryUtilsUsageCache: CachedValue<Map<String, List<SmartPsiElementPointer<PsiLiteralExpression>>>> =
-        CachedValuesManager.getManager(project).createCachedValue {
-            val resultMap = mutableMapOf<String, MutableList<SmartPsiElementPointer<PsiLiteralExpression>>>()
-            val index = FileBasedIndex.getInstance()
-            val psiManager = PsiManager.getInstance(project)
-            val pointerManager = SmartPointerManager.getInstance(project)
-            val searchScope = GlobalSearchScope.projectScope(project)
+    private val queryUtilsUsageCache: CachedValue<Map<String, List<SmartPsiElementPointer<PsiLiteralExpression>>>> = CachedValuesManager.getManager(project).createCachedValue {
+        log.info("Building/Rebuilding QueryUtils usage cache...") // Add log
+        val resultMap = mutableMapOf<String, MutableList<SmartPsiElementPointer<PsiLiteralExpression>>>()
+        val dumbService = DumbService.getInstance(project) // Check dumb mode
+
+        if (dumbService.isDumb) {
+            log.warn("QueryUtils usage cache computation skipped: Project is in dumb mode.")
+            return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService)
+        }
+
+        val index = FileBasedIndex.getInstance()
+        val psiManager = PsiManager.getInstance(project)
+        val pointerManager = SmartPointerManager.getInstance(project)
+        val searchScope = GlobalSearchScope.projectScope(project)
+        // Get settings *once*
+        val settings = getSettings(project)
+        val expectedFqn = getQueryUtilsFqn(project) // Use helper method
+        val expectedMethodName = getQueryUtilsMethodName(project) // Use helper method
+
+        try {
             val allKeys = index.getAllKeys(QueryUtilsUsageIndex.KEY, project)
+            log.debug("QueryUtilsIndex returned ${allKeys.size} potential query IDs.")
 
             for (queryId in allKeys) {
+                // Check if queryId is potentially valid (optional optimization)
+                // if (queryId.isBlank()) continue
+
                 val filePaths = index.getValues(QueryUtilsUsageIndex.KEY, queryId, searchScope)
+                log.debug("Processing queryId '$queryId', found in ${filePaths.size} files from index.")
+
                 for (filePath in filePaths) {
                     val vFile = LocalFileSystem.getInstance().findFileByPath(filePath) ?: continue
+                    // Ensure file is still valid and in scope
+                    if (!vFile.isValid || !searchScope.contains(vFile)) continue
+
                     val psiFile = psiManager.findFile(vFile) ?: continue
+                    log.trace("Scanning file ${vFile.path} for exact matches for queryId '$queryId'")
+
+                    // Visit the specific file to find the *exact* literal and verify FQN
                     psiFile.accept(object : JavaRecursiveElementVisitor() {
                         override fun visitLiteralExpression(expression: PsiLiteralExpression) {
                             super.visitLiteralExpression(expression)
+                            // Check if this literal matches the ID we are currently processing
                             if (expression.value == queryId) {
-                                val methodCall = expression.parent?.parent as? PsiMethodCallExpression ?: return
-                                val methodExpr = methodCall.methodExpression
-                                val methodName = methodExpr.referenceName
-                                val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
-                                val qualifierType = qualifierExpr?.type
-                                val qualifierFqn = qualifierType?.canonicalText
-                                // For now, hardcode or use settings for FQN
-                                if (methodName == getQueryUtilsMethodName(project) && qualifierFqn == getQueryUtilsFqn(project)) {
-                                    resultMap.getOrPut(queryId) { mutableListOf() }
-                                        .add(pointerManager.createSmartPsiElementPointer(expression))
+                                // Check parent is MethodCallExpression
+                                val methodCall = PsiTreeUtil.getParentOfType(expression, PsiMethodCallExpression::class.java)
+                                if (methodCall != null && methodCall.argumentList.expressions.firstOrNull() == expression) {
+                                    val methodExpr = methodCall.methodExpression
+                                    // *** Perform ACCURATE check here ***
+                                    if (methodExpr.referenceName == expectedMethodName) {
+                                        val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
+                                        val qualifierType = qualifierExpr?.type
+                                        val qualifierFqn = qualifierType?.canonicalText
+                                        if (qualifierFqn == expectedFqn) {
+                                            // Match found! Add smart pointer to the result map
+                                            log.debug("Confirmed match: ID='$queryId', FQN='$qualifierFqn', Method='$expectedMethodName' in ${vFile.name}")
+                                            resultMap.getOrPut(queryId) { mutableListOf() }.add(pointerManager.createSmartPsiElementPointer(expression))
+                                        } else {
+                                            log.trace("Method name matches, but FQN mismatch ('$qualifierFqn' != '$expectedFqn') for ID '$queryId' in ${vFile.name}")
+                                        }
+                                    }
                                 }
                             }
                         }
                     })
                 }
             }
-            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
+        } catch (e: IllegalStateException) {
+            log.error("IllegalStateException during index access in queryUtilsUsageCache computation, even after dumb check.", e)
+            return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService)
+        } catch (e: Exception) { // Catch other potential errors during PSI processing
+            log.error("Exception during queryUtilsUsageCache computation.", e)
+            return@createCachedValue CachedValueProvider.Result.create(emptyMap(), PsiModificationTracker.MODIFICATION_COUNT) // Depend on PSI changes if error
         }
+
+        log.info("QueryUtils usage cache build complete. Found usages for ${resultMap.size} query IDs.")
+        // Depend on PSI changes and index changes
+            CachedValueProvider.Result.create(
+                resultMap, PsiModificationTracker.MODIFICATION_COUNT // Correct dependency
+            )
+    }
+
 
     fun findQueryUtilsUsagesById(queryId: String): List<PsiLiteralExpression> {
         return queryUtilsUsageCache.value[queryId]?.mapNotNull { it.element } ?: emptyList()
@@ -205,8 +252,6 @@ class QueryIndexService(private val project: Project) {
         }
         return result
     }*/
-
-
 
 
     fun findInterfaceById(queryId: String): PsiClass? {
