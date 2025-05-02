@@ -171,7 +171,7 @@ class QueryIndexService(private val project: Project) {
                     })
                 }
             }
-            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT, FileBasedIndex.getInstance())
+            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
         }
 
     fun findQueryUtilsUsagesById(queryId: String): List<PsiLiteralExpression> {
