@@ -10,4 +10,7 @@ object EDXRefIcons {
 
     @JvmField
     val JAVA_TO_XML: Icon = IconLoader.getIcon("/icons/javaToXml.svg", EDXRefIcons::class.java)
+
+    @JvmField
+    val METHOD_JAVA__TO_XML: Icon = IconLoader.getIcon("/icons/MethodQueryUtil.svg", EDXRefIcons::class.java)
 }

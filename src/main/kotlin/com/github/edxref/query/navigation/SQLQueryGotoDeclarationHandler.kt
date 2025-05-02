@@ -1,55 +1,126 @@
-package com.github.edxref.query.navigation // Adjust import if needed
+package com.github.edxref.query.navigation
 
+import com.github.edxref.query.cache.QueryIndexService
+import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationHandler
-import com.intellij.psi.PsiElement
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.Editor
-import com.github.edxref.query.util.QueryIdResolver // Adjust import if needed
+import com.intellij.openapi.project.DumbService
+import com.intellij.psi.*
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.xml.XmlAttribute
-import com.intellij.psi.PsiAnnotation
+import com.intellij.psi.xml.XmlAttributeValue
+import com.intellij.psi.xml.XmlTag
+import com.intellij.psi.xml.XmlToken
+import com.intellij.psi.xml.XmlTokenType
 
-class SQLQueryGotoDeclarationHandler : GotoDeclarationHandler {
+class QueryGotoDeclarationHandler : GotoDeclarationHandler {
+
+    private val log = logger<QueryGotoDeclarationHandler>()
+
     override fun getGotoDeclarationTargets(
         sourceElement: PsiElement?,
         offset: Int,
-        editor: Editor
+        editor: Editor?
     ): Array<PsiElement>? {
+        if (sourceElement == null) {
+            log.debug("Source element is null.")
+            return null
+        }
 
-        if (sourceElement == null) return null
+        val project = sourceElement.project
+        if (DumbService.isDumb(project)) {
+            log.debug("Project is in dumb mode.")
+            return null // Cannot use index service during dumb mode
+        }
 
-        // Handle navigation from XML attribute (id="...")
-        if (sourceElement.parent is XmlAttribute) {
-            val attribute = sourceElement.parent as XmlAttribute
-            if (attribute.name == "id" && attribute.parent?.name == "query") {
-                // Use ?.let to safely handle nullable attribute.value
-                attribute.value?.let { queryId ->
-                    // 'queryId' is now guaranteed non-null (String)
-                    QueryIdResolver.resolveQueryInterface(queryId, attribute.project)?.let { resolvedInterface ->
-                        return arrayOf(resolvedInterface) // Return the resolved interface
+        val queryIndexService = QueryIndexService.getInstance(project)
+        val settings = project.getQueryRefSettings()
+
+        // --- 1. Extract Query ID based on source element type ---
+        var queryId: String? = null
+        var originType: OriginType? = null // To help filter out the source later
+
+        // Case A: Clicked inside XML <query id="..."> attribute value
+        if (sourceElement is XmlToken && sourceElement.tokenType == XmlTokenType.XML_ATTRIBUTE_VALUE_TOKEN) {
+            val attributeValue = sourceElement.parent as? XmlAttributeValue
+            val attribute = attributeValue?.parent as? XmlAttribute
+            val tag = attribute?.parent as? XmlTag
+            if (attribute?.name == "id" && tag?.name == "query") {
+                queryId = attributeValue.value
+                originType = OriginType.XML
+                log.debug("Origin: XML id attribute value. QueryId: $queryId")
+            }
+        }
+        // Case B: Clicked inside @SQLRef(refId="...") literal value
+        else if (sourceElement is PsiLiteralExpression && sourceElement.value is String) {
+            val annotationAttribute = sourceElement.parent as? PsiNameValuePair
+            val annotation = annotationAttribute?.parent?.parent as? PsiAnnotation // PsiParameterList -> PsiAnnotation
+            if (annotation != null &&
+                annotation.qualifiedName == settings.sqlRefAnnotationFqn &&
+                annotationAttribute.name == settings.sqlRefAnnotationAttributeName
+            ) {
+                queryId = sourceElement.value as String
+                originType = OriginType.SQLREF
+                log.debug("Origin: @SQLRef literal value. QueryId: $queryId")
+            }
+            // Case C: Clicked inside QueryUtils.getQuery("...") literal value
+            else {
+                val methodCall = sourceElement.parent?.parent as? PsiMethodCallExpression
+                if (methodCall != null) {
+                    val methodExpr = methodCall.methodExpression
+                    val methodName = methodExpr.referenceName
+                    val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
+                    val qualifierType = qualifierExpr?.type
+                    val qualifierFqn = qualifierType?.canonicalText
+
+                    if (methodName == settings.queryUtilsMethodName && qualifierFqn == settings.queryUtilsFqn) {
+                        queryId = sourceElement.value as String
+                        originType = OriginType.QUERY_UTILS
+                        log.debug("Origin: QueryUtils literal value. QueryId: $queryId")
                     }
                 }
             }
         }
 
-        // Handle navigation from Java annotation (@SQLRef(refId="..."))
-        // Check if the sourceElement itself or its parent is the annotation value we care about
-        var annotationElement = sourceElement
-        if (sourceElement.parent is PsiAnnotation) {
-            annotationElement = sourceElement.parent
+        // If no relevant query ID was found at the source element, stop.
+        if (queryId == null || originType == null) {
+            log.debug("No relevant query ID found at source element: ${sourceElement.text} (Type: ${sourceElement.javaClass.simpleName})")
+            return null
         }
 
-        if (annotationElement is PsiAnnotation && annotationElement.qualifiedName == "SQLRef") { // Adjust annotation name if needed
-            // Extract refId safely, handling potential nulls
-            val refIdLiteral = annotationElement.findAttributeValue("refId")
-            val refId = refIdLiteral?.text?.replace("\"", "") // Get text and remove quotes
+        // --- 2. Find all potential targets using the QueryIndexService ---
+        log.debug("Searching for targets for queryId: $queryId")
+        val targets = mutableListOf<PsiElement>()
 
-            if (refId != null) {
-                // refId is non-null here
-                QueryIdResolver.resolveQueryXml(refId, annotationElement.project)?.let { resolvedXmlTag ->
-                    return arrayOf(resolvedXmlTag) // Return the resolved XML tag
-                }
+        queryIndexService.findXmlTagById(queryId)?.let { targets.add(it) }
+        queryIndexService.findInterfaceById(queryId)?.let { targets.add(it) }
+        targets.addAll(queryIndexService.findQueryUtilsUsagesById(queryId))
+
+        // --- 3. Filter out the source element itself ---
+        val finalTargets = targets.filter { target ->
+            when (originType) {
+                // If origin is XML, don't navigate to the same XML tag
+                OriginType.XML -> target != (sourceElement.parent?.parent?.parent as? XmlTag)
+                // If origin is @SQLRef literal, don't navigate to the containing class/interface
+                OriginType.SQLREF -> target != PsiTreeUtil.getParentOfType(sourceElement, PsiClass::class.java)
+                // If origin is QueryUtils literal, don't navigate to the exact same literal expression
+                OriginType.QUERY_UTILS -> target != sourceElement
             }
         }
 
-        return null // No target found
+        log.debug("Found ${finalTargets.size} potential navigation targets for '$queryId'.")
+
+        // Return targets if any found, otherwise null
+        return if (finalTargets.isNotEmpty()) {
+            finalTargets.toTypedArray()
+        } else {
+            null
+        }
+    }
+
+    // Helper enum to track where the navigation started
+    private enum class OriginType {
+        XML, SQLREF, QUERY_UTILS
     }
 }
