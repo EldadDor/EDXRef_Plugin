@@ -1,4 +1,4 @@
-package com.github.edxref.query.gutter // Or your package
+package com.github.edxref.query.gutter
 
 import com.github.edxref.icons.EDXRefIcons
 import com.github.edxref.query.cache.QueryIndexService
@@ -40,12 +40,18 @@ class JavaQueryLineMarkerProvider : LineMarkerProvider {
         log.debug("Checking ${elements.size} elements for Java line markers. Annotation: $annotationFqn, Attribute: $attributeName")
 
         for (element in elements) {
-            // We need to attach to a leaf element, often the annotation name identifier
+            // Only process PsiIdentifier elements
             if (element is PsiIdentifier) {
+                // Check if the identifier is part of an annotation
                 val annotation = PsiTreeUtil.getParentOfType(element, PsiAnnotation::class.java)
-                // Check if it's the correct annotation by FQN
                 if (annotation != null && annotation.qualifiedName == annotationFqn) {
-                    log.debug("Found potential annotation '${annotation.text}' attached to identifier '${element.text}'")
+                    // Ensure we're attaching the marker to the annotation name (SQLRef), not the attribute name (refId)
+                    if (annotation.nameReferenceElement?.referenceName != element.text) {
+                        log.debug("Skipping identifier '${element.text}' as it is not the annotation name.")
+                        continue
+                    }
+
+                    log.debug("Found annotation '${annotation.text}' attached to identifier '${element.text}'")
 
                     // Extract the query ID from the specified attribute
                     val queryId = annotation.findAttributeValue(attributeName)?.text?.replace("\"", "")
@@ -64,9 +70,8 @@ class JavaQueryLineMarkerProvider : LineMarkerProvider {
                                 .setTargets(targetXmlTag)
                                 .setTooltipText("Navigate to Query XML definition")
                                 .setAlignment(GutterIconRenderer.Alignment.LEFT)
-                            // No need for setTargetRenderer if default presentation is okay
 
-                            // Create marker info, attached to the leaf element (the annotation identifier)
+                            // Create marker info, attached to the annotation name (SQLRef)
                             val markerInfo = builder.createLineMarkerInfo(element)
                             result.add(markerInfo)
                             log.debug("Added line marker for queryId '$queryId'")

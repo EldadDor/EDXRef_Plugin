@@ -13,6 +13,7 @@ import com.intellij.psi.xml.XmlAttribute
 import com.intellij.psi.xml.XmlAttributeValue
 import com.intellij.psi.xml.XmlTag
 import com.github.edxref.icons.EDXRefIcons
+import com.github.edxref.query.cache.QueryIndexService
 import com.github.edxref.query.util.QueryIdResolver
 import com.intellij.psi.xml.XmlToken
 import com.intellij.psi.xml.XmlTokenType
@@ -35,30 +36,23 @@ class XmlQueryLineMarkerProvider : LineMarkerProvider {
                 if (attribute?.name == "id" && tag?.name == "query") {
                     val queryId = element.value
                     if (queryId.isNotBlank()) {
-                        val targetInterface: PsiElement? = QueryIdResolver.resolveQueryInterface(queryId, element.project)
+                        val queryIndexService = QueryIndexService.getInstance(element.project)
+                        val targetInterface = queryIndexService.findInterfaceById(queryId)
+                        val queryUtilsUsages = queryIndexService.findQueryUtilsUsagesById(queryId)
 
-                        if (targetInterface != null) {
+                        val targets = mutableListOf<PsiElement>()
+                        if (targetInterface != null) targets.add(targetInterface)
+                        targets.addAll(queryUtilsUsages)
+
+                        if (targets.isNotEmpty()) {
                             val builder = NavigationGutterIconBuilder
                                 .create(EDXRefIcons.XML_TO_JAVA)
-                                .setTargets(targetInterface)
-                                .setTooltipText("Navigate to Query Interface definition")
+                                .setTargets(targets)
+                                .setTooltipText("Navigate to Query Interface and/or QueryUtils usages")
                                 .setAlignment(GutterIconRenderer.Alignment.LEFT)
-                                .setTargetRenderer {
-                                    object : PsiTargetPresentationRenderer<PsiElement>() {
-                                        override fun getPresentation(element: PsiElement): TargetPresentation {
-                                            val text = (element as? PsiClass)?.name
-                                                ?: element.text
-                                                ?: "Target Interface"
-                                            return TargetPresentation.builder(text).presentation()
-                                        }
-                                    }
-                                }
-
-                            // --- FIX: Attach to the leaf token, not the XmlAttributeValue itself ---
                             val valueToken = element.children
                                 .filterIsInstance<XmlToken>()
                                 .firstOrNull { it.tokenType == XmlTokenType.XML_ATTRIBUTE_VALUE_TOKEN }
-
                             if (valueToken != null) {
                                 val markerInfo = builder.createLineMarkerInfo(valueToken)
                                 result.add(markerInfo)
@@ -68,6 +62,5 @@ class XmlQueryLineMarkerProvider : LineMarkerProvider {
                 }
             }
         }
-
     }
 }

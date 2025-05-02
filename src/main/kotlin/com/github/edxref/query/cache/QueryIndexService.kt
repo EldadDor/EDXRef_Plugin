@@ -2,6 +2,7 @@
 package com.github.edxref.query.cache
 
 // Keep existing imports...
+import com.github.edxref.query.index.QueryUtilsUsageIndex
 import com.github.edxref.query.index.SQLQueryFileIndexer
 import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
 // Remove WSConsumerSettings import if only used for logIfEnabled
@@ -15,6 +16,8 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.PsiSearchHelper
+import com.intellij.psi.search.UsageSearchContext
 import com.intellij.psi.search.searches.AnnotatedElementsSearch
 import com.intellij.psi.util.CachedValue
 import com.intellij.psi.util.CachedValueProvider
@@ -35,6 +38,8 @@ class QueryIndexService(private val project: Project) {
     private fun getSettings(project: Project) = project.getQueryRefSettings()
     private fun getSqlRefAnnotationFqn(project: Project) = getSettings(project).sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
     private fun getSqlRefAnnotationAttributeName(project: Project) = getSettings(project).sqlRefAnnotationAttributeName.ifBlank { "refId" }
+    private fun getQueryUtilsFqn(project: Project) = getSettings(project).queryUtilsFqn.ifBlank { "com.example.QueryUtils" }
+    private fun getQueryUtilsMethodName(project: Project) = getSettings(project).queryUtilsMethodName.ifBlank { "getQuery" }
 
     companion object {
         fun getInstance(project: Project): QueryIndexService = project.getService(QueryIndexService::class.java)
@@ -132,6 +137,77 @@ class QueryIndexService(private val project: Project) {
         CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
     }
 
+    private val queryUtilsUsageCache: CachedValue<Map<String, List<SmartPsiElementPointer<PsiLiteralExpression>>>> =
+        CachedValuesManager.getManager(project).createCachedValue {
+            val resultMap = mutableMapOf<String, MutableList<SmartPsiElementPointer<PsiLiteralExpression>>>()
+            val index = FileBasedIndex.getInstance()
+            val psiManager = PsiManager.getInstance(project)
+            val pointerManager = SmartPointerManager.getInstance(project)
+            val searchScope = GlobalSearchScope.projectScope(project)
+            val allKeys = index.getAllKeys(QueryUtilsUsageIndex.KEY, project)
+
+            for (queryId in allKeys) {
+                val filePaths = index.getValues(QueryUtilsUsageIndex.KEY, queryId, searchScope)
+                for (filePath in filePaths) {
+                    val vFile = LocalFileSystem.getInstance().findFileByPath(filePath) ?: continue
+                    val psiFile = psiManager.findFile(vFile) ?: continue
+                    psiFile.accept(object : JavaRecursiveElementVisitor() {
+                        override fun visitLiteralExpression(expression: PsiLiteralExpression) {
+                            super.visitLiteralExpression(expression)
+                            if (expression.value == queryId) {
+                                val methodCall = expression.parent?.parent as? PsiMethodCallExpression ?: return
+                                val methodExpr = methodCall.methodExpression
+                                val methodName = methodExpr.referenceName
+                                val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
+                                val qualifierType = qualifierExpr?.type
+                                val qualifierFqn = qualifierType?.canonicalText
+                                // For now, hardcode or use settings for FQN
+                                if (methodName == getQueryUtilsMethodName(project) && qualifierFqn == getQueryUtilsFqn(project)) {
+                                    resultMap.getOrPut(queryId) { mutableListOf() }
+                                        .add(pointerManager.createSmartPsiElementPointer(expression))
+                                }
+                            }
+                        }
+                    })
+                }
+            }
+            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT, FileBasedIndex.getInstance())
+        }
+
+    fun findQueryUtilsUsagesById(queryId: String): List<PsiLiteralExpression> {
+        return queryUtilsUsageCache.value[queryId]?.mapNotNull { it.element } ?: emptyList()
+    }
+
+    /*fun findQueryUtilsUsagesById(queryId: String): List<PsiLiteralExpression> {
+        val index = FileBasedIndex.getInstance()
+        val filePaths = index.getValues(QueryUtilsUsageIndex.KEY, queryId, GlobalSearchScope.projectScope(project))
+        val psiManager = PsiManager.getInstance(project)
+        val result = mutableListOf<PsiLiteralExpression>()
+        for (filePath in filePaths) {
+            val vFile = LocalFileSystem.getInstance().findFileByPath(filePath) ?: continue
+            val psiFile = psiManager.findFile(vFile) ?: continue
+            psiFile.accept(object : com.intellij.psi.JavaRecursiveElementVisitor() {
+                override fun visitLiteralExpression(expression: PsiLiteralExpression) {
+                    super.visitLiteralExpression(expression)
+                    if (expression.value == queryId) {
+                        val methodCall = expression.parent?.parent as? PsiMethodCallExpression ?: return
+                        val methodExpr = methodCall.methodExpression
+                        val methodName = methodExpr.referenceName
+                        val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
+                        val qualifierType = qualifierExpr?.type
+                        val qualifierFqn = qualifierType?.canonicalText
+                        if (methodName == "getQuery" && qualifierFqn == "com.example.QueryUtils") {
+                            result.add(expression)
+                        }
+                    }
+                }
+            })
+        }
+        return result
+    }*/
+
+
+
 
     fun findInterfaceById(queryId: String): PsiClass? {
         log.debug("Looking up interface for queryId '$queryId'") // Log lookup start
@@ -147,4 +223,21 @@ class QueryIndexService(private val project: Project) {
         log.debug("XML tag lookup for queryId '$queryId' result: ${if (result != null) "Found in file (${result.containingFile.virtualFile?.path})" else "Not Found"}") // Log lookup result
         return result
     }
+
+    fun getAllQueryIds(): Set<String> {
+        val xmlIds = xmlTagCache.value.keys
+        val interfaceIds = interfaceCache.value.keys
+        val queryUtilsIds = queryUtilsUsageCache.value.keys
+        return xmlIds + interfaceIds + queryUtilsIds
+    }
+
+    fun isQueryIdUnused(queryId: String): Boolean {
+        val inXml = xmlTagCache.value.containsKey(queryId)
+        val inInterface = interfaceCache.value.containsKey(queryId)
+        val inQueryUtils = queryUtilsUsageCache.value.containsKey(queryId)
+        // Unused if present in only one place
+        val count = listOf(inXml, inInterface, inQueryUtils).count { it }
+        return count == 1
+    }
+
 }

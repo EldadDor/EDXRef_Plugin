@@ -17,7 +17,9 @@ class QueryRefSettings : PersistentStateComponent<QueryRefSettings.State> {
     data class State(
         var queriesPath: String = "resources/queries/",
         var sqlRefAnnotationFqn: String = "com.github.edxref.annotations.SQLRef",
-        var sqlRefAnnotationAttributeName: String = "refId"
+        var sqlRefAnnotationAttributeName: String = "refId",
+        var queryUtilsFqn: String = "com.github.edxref.QueryUtils",
+        var queryUtilsMethodName: String = "getQuery"
     )
 
     private var state = State()
@@ -47,5 +49,15 @@ class QueryRefSettings : PersistentStateComponent<QueryRefSettings.State> {
         get() = state.sqlRefAnnotationAttributeName
         set(value) {
             state.sqlRefAnnotationAttributeName = value
+        }
+    var queryUtilsFqn: String
+        get() = state.queryUtilsFqn
+        set(value) {
+            state.queryUtilsFqn = value
+        }
+    var queryUtilsMethodName: String
+        get() = state.queryUtilsMethodName
+        set(value) {
+            state.queryUtilsMethodName = value
         }
 }
