@@ -33,7 +33,9 @@ class QueryRefSettingsConfigurable : Configurable {
         val settings = settingsComponent?.project?.getQueryRefSettings() ?: return false
         return settingsComponent!!.queriesPath != settings.queriesPath ||
                 settingsComponent!!.sqlRefAnnotationFqn != settings.sqlRefAnnotationFqn ||
-                settingsComponent!!.sqlRefAnnotationAttributeName != settings.sqlRefAnnotationAttributeName
+                settingsComponent!!.sqlRefAnnotationAttributeName != settings.sqlRefAnnotationAttributeName ||
+                settingsComponent!!.queryUtilsFqn != settings.queryUtilsFqn ||
+                settingsComponent!!.queryUtilsMethodName != settings.queryUtilsMethodName
     }
 
     /**
@@ -44,6 +46,8 @@ class QueryRefSettingsConfigurable : Configurable {
         settings.queriesPath = settingsComponent!!.queriesPath
         settings.sqlRefAnnotationFqn = settingsComponent!!.sqlRefAnnotationFqn
         settings.sqlRefAnnotationAttributeName = settingsComponent!!.sqlRefAnnotationAttributeName
+        settings.queryUtilsFqn = settingsComponent!!.queryUtilsFqn
+        settings.queryUtilsMethodName = settingsComponent!!.queryUtilsMethodName
     }
 
     override fun reset() {
@@ -51,6 +55,8 @@ class QueryRefSettingsConfigurable : Configurable {
         settingsComponent!!.queriesPath = settings.queriesPath
         settingsComponent!!.sqlRefAnnotationFqn = settings.sqlRefAnnotationFqn
         settingsComponent!!.sqlRefAnnotationAttributeName = settings.sqlRefAnnotationAttributeName
+        settingsComponent!!.queryUtilsFqn = settings.queryUtilsFqn
+        settingsComponent!!.queryUtilsMethodName = settings.queryUtilsMethodName
     }
 
     override fun disposeUIResources() {

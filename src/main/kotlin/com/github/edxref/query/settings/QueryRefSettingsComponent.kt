@@ -21,6 +21,8 @@ class QueryRefSettingsComponent {
     private val queriesPathField = JBTextField()
     private val sqlRefAnnotationFqnField = JBTextField()
     private val sqlRefAnnotationAttributeNameField = JBTextField()
+    private val queryUtilsFqnField = JBTextField()
+    private val queryUtilsMethodNameField = JBTextField()
 
     init {
         // Use FormBuilder for standard IntelliJ settings layout
@@ -31,7 +33,11 @@ class QueryRefSettingsComponent {
             .addTooltip("Fully qualified name of the annotation marking query references (e.g., com.example.SqlRef)")
             .addLabeledComponent(JBLabel("SQLRef Annotation Attribute:"), sqlRefAnnotationAttributeNameField, 1, false)
             .addTooltip("Name of the annotation attribute holding the query ID (e.g., refId or value)")
-            .addComponentFillVertically(JPanel(), 0) // Add vertical space
+            .addLabeledComponent(JBLabel("QueryUtils FQN:"), queryUtilsFqnField, 1, false)
+            .addTooltip("Fully qualified name of the QueryUtils class (e.g., com.github.edxref.QueryUtils)")
+            .addLabeledComponent(JBLabel("QueryUtils Method Name:"), queryUtilsMethodNameField, 1, false)
+            .addTooltip("Method name for fetching queries (e.g., getQuery)")
+            .addComponentFillVertically(JPanel(), 0)
             .panel
     }
 
@@ -52,4 +58,11 @@ class QueryRefSettingsComponent {
         set(value) {
             sqlRefAnnotationAttributeNameField.text = value
         }
+    var queryUtilsFqn: String
+        get() = queryUtilsFqnField.text
+        set(value) { queryUtilsFqnField.text = value }
+
+    var queryUtilsMethodName: String
+        get() = queryUtilsMethodNameField.text
+        set(value) { queryUtilsMethodNameField.text = value }
 }

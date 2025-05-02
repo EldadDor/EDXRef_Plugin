@@ -2,15 +2,21 @@ package com.github.edxref.query.gutter
 
 import com.github.edxref.icons.EDXRefIcons
 import com.github.edxref.query.cache.QueryIndexService
+import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
 import com.intellij.codeInsight.daemon.LineMarkerInfo
 import com.intellij.codeInsight.daemon.LineMarkerProvider
 import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder
 import com.intellij.openapi.editor.markup.GutterIconRenderer
+import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiLiteralExpression
 import com.intellij.psi.PsiMethodCallExpression
 
 class MethodQueryUtilLineMarkerProvider : LineMarkerProvider {
+    private fun getSettings(project: Project) = project.getQueryRefSettings()
+    private fun getQueryUtilsFqn(project: Project) = getSettings(project).queryUtilsFqn.ifBlank { "com.example.QueryUtils" }
+    private fun getQueryUtilsMethodName(project: Project) = getSettings(project).queryUtilsMethodName.ifBlank { "getQuery" }
+
     override fun getLineMarkerInfo(p0: PsiElement): LineMarkerInfo<*>? {
         return null
     }
@@ -30,7 +36,7 @@ class MethodQueryUtilLineMarkerProvider : LineMarkerProvider {
                     val methodName = methodExpr.referenceName
                     val qualifier = methodExpr.qualifierExpression?.text
 
-                    if (methodName == "getQuery" && qualifier == "queryUtils") {
+                    if (methodName == getQueryUtilsMethodName(element.project) && qualifier == getQueryUtilsFqn(element.project)) {
                         // Now, literalValue is your query ID
                         val xmlTag = QueryIndexService.getInstance(element.project).findXmlTagById(literalValue)
                         if (xmlTag != null) {

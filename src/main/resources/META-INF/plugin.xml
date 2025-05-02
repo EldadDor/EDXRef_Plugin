@@ -31,6 +31,8 @@
 
         <codeInsight.lineMarkerProvider language="JAVA"
                                         implementationClass="com.github.edxref.query.gutter.JavaQueryLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="JAVA"
+                                        implementationClass="com.github.edxref.query.gutter.MethodQueryUtilLineMarkerProvider"/>
         <codeInsight.lineMarkerProvider language="XML"
                                         implementationClass="com.github.edxref.query.gutter.XmlQueryLineMarkerProvider"/>
         <fileBasedIndex implementation="com.github.edxref.query.index.SQLQueryFileIndexer"/>

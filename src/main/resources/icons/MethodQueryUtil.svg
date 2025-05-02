@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+    <text x="0" y="12" font-size="12" fill="#2379F1">&lt;/&gt;</text>
+    <text x="5" y="12" font-size="15" fill="#3f7a2f">Q</text>
+    <path d="M6,8 L10,8 M8,6 L10,8 L8,10" stroke="#2379F1" fill="black"/>
+</svg>
