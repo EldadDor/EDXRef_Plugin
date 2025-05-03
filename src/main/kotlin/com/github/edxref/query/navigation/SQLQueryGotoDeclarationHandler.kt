@@ -13,6 +13,7 @@ import com.intellij.psi.xml.XmlAttributeValue
 import com.intellij.psi.xml.XmlTag
 import com.intellij.psi.xml.XmlToken
 import com.intellij.psi.xml.XmlTokenType
+import com.intellij.psi.JavaTokenType
 
 class QueryGotoDeclarationHandler : GotoDeclarationHandler {
 
@@ -52,32 +53,35 @@ class QueryGotoDeclarationHandler : GotoDeclarationHandler {
                 log.debug("Origin: XML id attribute value. QueryId: $queryId")
             }
         }
-        // Case B: Clicked inside @SQLRef(refId="...") literal value
-        else if (sourceElement is PsiLiteralExpression && sourceElement.value is String) {
-            val annotationAttribute = sourceElement.parent as? PsiNameValuePair
-            val annotation = annotationAttribute?.parent?.parent as? PsiAnnotation // PsiParameterList -> PsiAnnotation
-            if (annotation != null &&
-                annotation.qualifiedName == settings.sqlRefAnnotationFqn &&
-                annotationAttribute.name == settings.sqlRefAnnotationAttributeName
-            ) {
-                queryId = sourceElement.value as String
-                originType = OriginType.SQLREF
-                log.debug("Origin: @SQLRef literal value. QueryId: $queryId")
-            }
-            // Case C: Clicked inside QueryUtils.getQuery("...") literal value
-            else {
-                val methodCall = sourceElement.parent?.parent as? PsiMethodCallExpression
-                if (methodCall != null) {
-                    val methodExpr = methodCall.methodExpression
-                    val methodName = methodExpr.referenceName
-                    val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
-                    val qualifierType = qualifierExpr?.type
-                    val qualifierFqn = qualifierType?.canonicalText
+        // Case B/C: Clicked inside a Java string literal (in annotation or method call)
+        else if (sourceElement is PsiJavaToken && sourceElement.tokenType == JavaTokenType.STRING_LITERAL) {
+            val literal = sourceElement.parent as? PsiLiteralExpression
+            if (literal != null && literal.value is String) {
+                // Check for @SQLRef(refId="...") annotation usage
+                val annotationAttribute = literal.parent as? PsiNameValuePair
+                val annotation = annotationAttribute?.parent?.parent as? PsiAnnotation
+                if (annotation != null &&
+                    annotation.qualifiedName == settings.sqlRefAnnotationFqn &&
+                    annotationAttribute.name == settings.sqlRefAnnotationAttributeName
+                ) {
+                    queryId = literal.value as String
+                    originType = OriginType.SQLREF
+                    log.debug("Origin: @SQLRef literal value. QueryId: $queryId")
+                } else {
+                    // Check for QueryUtils.getQuery("...") usage
+                    val methodCall = literal.parent?.parent as? PsiMethodCallExpression
+                    if (methodCall != null) {
+                        val methodExpr = methodCall.methodExpression
+                        val methodName = methodExpr.referenceName
+                        val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
+                        val qualifierType = qualifierExpr?.type
+                        val qualifierFqn = qualifierType?.canonicalText
 
-                    if (methodName == settings.queryUtilsMethodName && qualifierFqn == settings.queryUtilsFqn) {
-                        queryId = sourceElement.value as String
-                        originType = OriginType.QUERY_UTILS
-                        log.debug("Origin: QueryUtils literal value. QueryId: $queryId")
+                        if (methodName == settings.queryUtilsMethodName && qualifierFqn == settings.queryUtilsFqn) {
+                            queryId = literal.value as String
+                            originType = OriginType.QUERY_UTILS
+                            log.debug("Origin: QueryUtils literal value. QueryId: $queryId")
+                        }
                     }
                 }
             }
@@ -105,7 +109,11 @@ class QueryGotoDeclarationHandler : GotoDeclarationHandler {
                 // If origin is @SQLRef literal, don't navigate to the containing class/interface
                 OriginType.SQLREF -> target != PsiTreeUtil.getParentOfType(sourceElement, PsiClass::class.java)
                 // If origin is QueryUtils literal, don't navigate to the exact same literal expression
-                OriginType.QUERY_UTILS -> target != sourceElement
+                OriginType.QUERY_UTILS -> {
+                    // target should not be the same literal expression
+                    val literal = (sourceElement.parent as? PsiLiteralExpression)
+                    target != literal
+                }
             }
         }
 
