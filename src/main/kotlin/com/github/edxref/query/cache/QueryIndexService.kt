@@ -54,25 +54,36 @@ class QueryIndexService(private val project: Project) {
         val annotationFqn = getSqlRefAnnotationFqn(project)
         val attributeName = getSqlRefAnnotationAttributeName(project)
         val annotationClass = psiFacade.findClass(annotationFqn, GlobalSearchScope.allScope(project))
+        val dumbService = DumbService.getInstance(project) // <<< GET DUMB SERVICE INSTANCE
 
-        if (annotationClass != null) {
-            log.debug("Found annotation class: $annotationFqn")
-            val candidates = AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.projectScope(project)).findAll()
-            log.debug("Found ${candidates.size} potential candidates annotated with $annotationFqn.")
-            val pointerManager = SmartPointerManager.getInstance(project)
-            candidates.forEach { psiClass ->
-                psiClass.annotations.firstOrNull { ann -> ann.qualifiedName == annotationFqn }?.let { ann ->
-                    ann.findAttributeValue(attributeName)?.text?.replace("\"", "")?.let { queryId ->
-                        log.debug("Caching interface '${psiClass.name}' for queryId '$queryId'") // Log item add
-                        resultMap[queryId] = pointerManager.createSmartPsiElementPointer(psiClass)
+        try {
+            if (annotationClass != null) {
+                log.debug("Found annotation class: $annotationFqn")
+                val candidates = AnnotatedElementsSearch.searchPsiClasses(annotationClass, GlobalSearchScope.projectScope(project)).findAll()
+                log.debug("Found ${candidates.size} potential candidates annotated with $annotationFqn.")
+                val pointerManager = SmartPointerManager.getInstance(project)
+                candidates.forEach { psiClass ->
+                    psiClass.annotations.firstOrNull { ann -> ann.qualifiedName == annotationFqn }?.let { ann ->
+                        ann.findAttributeValue(attributeName)?.text?.replace("\"", "")?.let { queryId ->
+                            log.debug("Caching interface '${psiClass.name}' for queryId '$queryId'") // Log item add
+                            resultMap[queryId] = pointerManager.createSmartPsiElementPointer(psiClass)
+                        }
                     }
                 }
+            } else {
+                log.warn("Annotation class '$annotationFqn' not found. Interface cache might be incomplete.") // Log warning if class not found
             }
-        } else {
-            log.warn("Annotation class '$annotationFqn' not found. Interface cache might be incomplete.") // Log warning if class not found
+            log.info("Interface cache build complete. Found ${resultMap.size} entries.") // Log cache build end
+            CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
+        } catch (e: com.intellij.openapi.progress.ProcessCanceledException) { // <<< CATCH PCE FIRST
+            throw e // Alwa
+        } catch (e: IllegalStateException) {
+            // Log the exception if it still somehow occurs despite the dumb check
+            log.error("IllegalStateException during index access in Interface computation, even after dumb check.", e)
+            // Return empty map to avoid further issues in this computation cycle
+            return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService) // Depend on dumb service to retry
         }
-        log.info("Interface cache build complete. Found ${resultMap.size} entries.") // Log cache build end
-        CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
+
     }
 
     // Cache: Query ID -> SmartPointer<XmlTag>
@@ -126,6 +137,8 @@ class QueryIndexService(private val project: Project) {
 
                 tagPointer?.let { resultMap[queryId] = it }
             }
+        } catch (e: com.intellij.openapi.progress.ProcessCanceledException) { // <<< CATCH PCE FIRST
+            throw e // Alwa
         } catch (e: IllegalStateException) {
             // Log the exception if it still somehow occurs despite the dumb check
             log.error("IllegalStateException during index access in xmlTagCache computation, even after dumb check.", e)
@@ -205,19 +218,23 @@ class QueryIndexService(private val project: Project) {
                     })
                 }
             }
+        } catch (e: com.intellij.openapi.progress.ProcessCanceledException) { // <<< CATCH PCE FIRST
+            throw e // Always rethrow PCE immediately!
         } catch (e: IllegalStateException) {
+            // Now this only catches non-PCE IllegalStateExceptions
             log.error("IllegalStateException during index access in queryUtilsUsageCache computation, even after dumb check.", e)
             return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService)
-        } catch (e: Exception) { // Catch other potential errors during PSI processing
+        } catch (e: Exception) {
+            // Now this only catches non-PCE Exceptions
             log.error("Exception during queryUtilsUsageCache computation.", e)
             return@createCachedValue CachedValueProvider.Result.create(emptyMap(), PsiModificationTracker.MODIFICATION_COUNT) // Depend on PSI changes if error
         }
 
         log.info("QueryUtils usage cache build complete. Found usages for ${resultMap.size} query IDs.")
         // Depend on PSI changes and index changes
-            CachedValueProvider.Result.create(
-                resultMap, PsiModificationTracker.MODIFICATION_COUNT // Correct dependency
-            )
+        CachedValueProvider.Result.create(
+            resultMap, PsiModificationTracker.MODIFICATION_COUNT // Correct dependency
+        )
     }
 
 
