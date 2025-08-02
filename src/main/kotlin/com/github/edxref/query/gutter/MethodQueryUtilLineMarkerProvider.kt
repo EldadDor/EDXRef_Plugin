@@ -15,13 +15,67 @@ import com.intellij.psi.PsiLiteralExpression
 import com.intellij.psi.PsiMethodCallExpression
 import com.intellij.psi.PsiReferenceExpression
 
+
 class MethodQueryUtilLineMarkerProvider : LineMarkerProvider {
 	private val log = logger<MethodQueryUtilLineMarkerProvider>()
 	private fun getSettings(project: Project) = project.getQueryRefSettings()
 	private fun getQueryUtilsFqn(project: Project) = getSettings(project).queryUtilsFqn.ifBlank { "com.example.QueryUtils" }
 	private fun getQueryUtilsMethodName(project: Project) = getSettings(project).queryUtilsMethodName.ifBlank { "getQuery" }
 
-	override fun getLineMarkerInfo(p0: PsiElement): LineMarkerInfo<*>? {
+	override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
+		// Fast path for method call string literals
+		if (element is PsiLiteralExpression && element.value is String) {
+			return createLineMarkerFromCache(element)
+		}
+		return null
+	}
+
+	private fun createLineMarkerFromCache(element: PsiLiteralExpression): LineMarkerInfo<*>? {
+		val project = element.project
+
+		// Check if we're in dumb mode - return null to defer to collectSlowLineMarkers
+		if (DumbService.isDumb(project)) {
+			return null
+		}
+
+		val literalValue = element.value as String
+
+		// Quick validation - check if parent is a method call
+		val methodCall = element.parent?.parent as? PsiMethodCallExpression ?: return null
+		val methodExpr = methodCall.methodExpression
+		val methodName = methodExpr.referenceName
+		val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
+
+		// Fast check for method name match
+		if (methodName != getQueryUtilsMethodName(project)) {
+			return null
+		}
+
+		// Fast check for qualifier type
+		val qualifierType = qualifierExpr?.type
+		val qualifierFqn = qualifierType?.canonicalText
+		if (qualifierFqn != getQueryUtilsFqn(project)) {
+			return null
+		}
+
+		try {
+			// Use cache to find XML tag
+			val xmlTag = QueryIndexService.getInstance(project).findXmlTagById(literalValue)
+			if (xmlTag != null) {
+				log.debug("Fast path: Found XML tag for queryId '$literalValue'")
+
+				val builder = NavigationGutterIconBuilder.create(EDXRefIcons.METHOD_JAVA__TO_XML)
+					.setTargets(xmlTag)
+					.setTooltipText("Navigate to Query XML definition")
+					.setAlignment(GutterIconRenderer.Alignment.LEFT)
+				return builder.createLineMarkerInfo(element)
+			}
+		} catch (e: Exception) {
+			// If anything goes wrong in the fast path, fall back to slow path
+			log.debug("Fast path failed for queryId '$literalValue', will use slow path: ${e.message}")
+			return null
+		}
+
 		return null
 	}
 

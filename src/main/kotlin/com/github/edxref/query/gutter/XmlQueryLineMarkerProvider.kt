@@ -15,52 +15,110 @@ import com.intellij.psi.xml.XmlTag
 import com.github.edxref.icons.EDXRefIcons
 import com.github.edxref.query.cache.QueryIndexService
 import com.github.edxref.query.util.QueryIdResolver
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.xml.XmlToken
 import com.intellij.psi.xml.XmlTokenType
 
 class XmlQueryLineMarkerProvider : LineMarkerProvider {
 
-    override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
-        return null
-    }
+	override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
+		// Fast path for XML attribute values
+		if (element is XmlAttributeValue) {
+			return createLineMarkerFromCache(element)
+		}
+		return null
+	}
 
-    override fun collectSlowLineMarkers(
-        elements: List<PsiElement>,
-        result: MutableCollection<in LineMarkerInfo<*>>
-    ) {
-        for (element in elements) {
-            if (element is XmlAttributeValue) {
-                val attribute = element.parent as? XmlAttribute
-                val tag = attribute?.parent as? XmlTag
+	private fun createLineMarkerFromCache(element: XmlAttributeValue): LineMarkerInfo<*>? {
+		val project = element.project
 
-                if (attribute?.name == "id" && tag?.name == "query") {
-                    val queryId = element.value
-                    if (queryId.isNotBlank()) {
-                        val queryIndexService = QueryIndexService.getInstance(element.project)
-                        val targetInterface = queryIndexService.findInterfaceById(queryId)
-                        val queryUtilsUsages = queryIndexService.findQueryUtilsUsagesById(queryId)
+		// Check if we're in dumb mode - return null to defer to collectSlowLineMarkers
+		if (DumbService.isDumb(project)) {
+			return null
+		}
 
-                        val targets = mutableListOf<PsiElement>()
-                        if (targetInterface != null) targets.add(targetInterface)
-                        targets.addAll(queryUtilsUsages)
+		val attribute = element.parent as? XmlAttribute ?: return null
+		val tag = attribute.parent as? XmlTag ?: return null
 
-                        if (targets.isNotEmpty()) {
-                            val builder = NavigationGutterIconBuilder
-                                .create(EDXRefIcons.XML_TO_JAVA)
-                                .setTargets(targets)
-                                .setTooltipText("Navigate to Query Interface and/or QueryUtils usages")
-                                .setAlignment(GutterIconRenderer.Alignment.LEFT)
-                            val valueToken = element.children
-                                .filterIsInstance<XmlToken>()
-                                .firstOrNull { it.tokenType == XmlTokenType.XML_ATTRIBUTE_VALUE_TOKEN }
-                            if (valueToken != null) {
-                                val markerInfo = builder.createLineMarkerInfo(valueToken)
-                                result.add(markerInfo)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+		// Quick check for the right attribute and tag
+		if (attribute.name != "id" || tag.name != "query") {
+			return null
+		}
+
+		val queryId = element.value
+		if (queryId.isBlank()) {
+			return null
+		}
+
+		try {
+			val queryIndexService = QueryIndexService.getInstance(project)
+			val targetInterface = queryIndexService.findInterfaceById(queryId)
+			val queryUtilsUsages = queryIndexService.findQueryUtilsUsagesById(queryId)
+
+			val targets = mutableListOf<PsiElement>()
+			if (targetInterface != null) targets.add(targetInterface)
+			targets.addAll(queryUtilsUsages)
+
+			if (targets.isNotEmpty()) {
+				val builder = NavigationGutterIconBuilder
+					.create(EDXRefIcons.XML_TO_JAVA)
+					.setTargets(targets)
+					.setTooltipText("Navigate to Query Interface and/or QueryUtils usages")
+					.setAlignment(GutterIconRenderer.Alignment.LEFT)
+
+				val valueToken = element.children
+					.filterIsInstance<XmlToken>()
+					.firstOrNull { it.tokenType == XmlTokenType.XML_ATTRIBUTE_VALUE_TOKEN }
+
+				if (valueToken != null) {
+					return builder.createLineMarkerInfo(valueToken)
+				}
+			}
+		} catch (e: Exception) {
+			// If anything goes wrong in the fast path, fall back to slow path
+			return null
+		}
+
+		return null
+	}
+
+	override fun collectSlowLineMarkers(
+		elements: List<PsiElement>,
+		result: MutableCollection<in LineMarkerInfo<*>>
+	) {
+		for (element in elements) {
+			if (element is XmlAttributeValue) {
+				val attribute = element.parent as? XmlAttribute
+				val tag = attribute?.parent as? XmlTag
+
+				if (attribute?.name == "id" && tag?.name == "query") {
+					val queryId = element.value
+					if (queryId.isNotBlank()) {
+						val queryIndexService = QueryIndexService.getInstance(element.project)
+						val targetInterface = queryIndexService.findInterfaceById(queryId)
+						val queryUtilsUsages = queryIndexService.findQueryUtilsUsagesById(queryId)
+
+						val targets = mutableListOf<PsiElement>()
+						if (targetInterface != null) targets.add(targetInterface)
+						targets.addAll(queryUtilsUsages)
+
+						if (targets.isNotEmpty()) {
+							val builder = NavigationGutterIconBuilder
+								.create(EDXRefIcons.XML_TO_JAVA)
+								.setTargets(targets)
+								.setTooltipText("Navigate to Query Interface and/or QueryUtils usages")
+								.setAlignment(GutterIconRenderer.Alignment.LEFT)
+							val valueToken = element.children
+								.filterIsInstance<XmlToken>()
+								.firstOrNull { it.tokenType == XmlTokenType.XML_ATTRIBUTE_VALUE_TOKEN }
+							if (valueToken != null) {
+								val markerInfo = builder.createLineMarkerInfo(valueToken)
+								result.add(markerInfo)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
