@@ -9,7 +9,7 @@
     <version>1.0.0</version>
 
     <!-- Add IDE compatibility information -->
-    <idea-version since-build="223.8836" until-build="243.*"/>
+    <idea-version since-build="223.8836" until-build="251.*"/>
     <description><![CDATA[
         <p>This is an Inspection Suite plugin, that used for the WebServiceConsumer & PearlWebServiceConsumer</p>
         <h2>Key Features</h2>
@@ -140,15 +140,12 @@
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.InternalApiKotlinInspection"/>
         <!--        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>-->
+
+        <!-- Unified EDXRef Plugin Settings -->
         <projectConfigurable
-                id="com.github.edxref.settings.WSConsumerSettingsConfigurable"
-                displayName="WSConsumer Settings"
-                instance="com.github.edxref.settings.WSConsumerSettingsConfigurable"
-                parentId="language" order="last"/>
-        <projectConfigurable
-                id="com.github.edxref.query.settings.QueryRefSettingsConfigurable"
-                displayName="QueryRef Settings"
-                instance="com.github.edxref.query.settings.QueryRefSettingsConfigurable"
+                id="com.github.edxref.settings.EDXRefSettingsConfigurable"
+                displayName="EDXRef Plugin"
+                instance="com.github.edxref.settings.EDXRefSettingsConfigurable"
                 parentId="language"
                 order="last"/>
 
