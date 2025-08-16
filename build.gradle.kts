@@ -2,7 +2,7 @@ import org.jetbrains.changelog.Changelog
 
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.9.25"
+    id("org.jetbrains.kotlin.jvm") version "2.0.21"
     id("org.jetbrains.intellij") version "1.17.0"
     id("org.jetbrains.changelog") version "2.2.1"
     id("org.jetbrains.qodana") version "2024.1.9"
@@ -10,7 +10,8 @@ plugins {
 }
 
 group = "com.github.edxref"
-version = "1.0.0"
+version = properties("pluginVersion")
+
 
 // Set the JVM language level used to build the project
 kotlin {
@@ -103,9 +104,10 @@ tasks.register<Copy>("copyJarToDist") {
     description = "Copies the jar artifact to the dist folder"
 
     // Define the source file (the jar artifact)
-    from(layout.buildDirectory.file("libs/EDXref-1.0.0.jar"))
+	from(layout.buildDirectory.file("libs/EDXref-${properties("pluginVersion")}.jar"))
 
-    // Define the destination directory
+
+	// Define the destination directory
     into(layout.projectDirectory.dir("dist"))
 
     // Ensure the task runs after the jar is built
