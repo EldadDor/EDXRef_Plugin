@@ -113,6 +113,7 @@ tasks.register<Copy>("copyJarToDist") {
 	// Ensure the task runs after the jar is built
 	dependsOn(tasks.named("jar"))
 }
+
 tasks.named("build") {
 	finalizedBy("copyJarToDist")
 }
@@ -121,6 +122,9 @@ tasks.test {
 	systemProperty("ide.allow.document.model.changes.in.highlighting", "true")
 	systemProperty("kotlin.script.disable.auto.import", "true")
 }
+
+
+
 
 // Configure Gradle Kover Plugin - read more: https://github.com/Kotlin/kotlinx-kover#configuration
 kover {
@@ -135,3 +139,105 @@ kover {
 
 // Helper function for getting properties
 fun properties(key: String) = providers.gradleProperty(key).getOrElse("")
+
+tasks.register("verifyK2Compilation") {
+	group = "verification"
+	description = "Verifies that plugin compiles correctly with K2 enabled"
+
+	dependsOn(tasks.compileKotlin, tasks.compileTestKotlin)
+
+	doLast {
+		println("✅ Plugin compiles successfully with K2 enabled")
+	}
+}
+
+// Add task to check for K2 compatibility issues in your plugin code
+// ... existing code ...
+
+// Add task to check for K2 compatibility issues in your plugin code
+tasks.register("checkK2Compatibility") {
+	group = "verification"
+	description = "Checks for common K2 compatibility issues in plugin code"
+
+	doLast {
+		val sourceFiles = fileTree("src/main/kotlin") {
+			include("**/*.kt")
+		}
+
+		var issuesFound = false
+		val commonK2Issues = listOf(
+			// Look for actual analyze blocks, not comments or strings
+			Regex("""^\s*analyze\s*\{""") to "Found analyze block - Consider using direct PSI operations instead for K2 compatibility",
+			Regex("""\bresolveToDescriptorIfAny\b""") to "Descriptor-based APIs may not work with K2",
+			Regex("""AnalysisHandlerExtension""") to "Analysis handler extensions may need updates for K2",
+			Regex("""KtAnalysisSession""") to "Check if KtAnalysisSession usage is compatible with current IntelliJ version",
+			// Check for other potential K2 issues
+			Regex("""\bBindingContext\b""") to "BindingContext usage may need K2 compatibility updates",
+			Regex("""\bResolveSession\b""") to "ResolveSession usage may not be compatible with K2"
+		)
+
+		sourceFiles.forEach { file ->
+			val lines = file.readLines()
+			lines.forEachIndexed { lineIndex, line ->
+				// Skip comments and string literals for analyze block check
+				val trimmedLine = line.trim()
+				if (trimmedLine.startsWith("//") || trimmedLine.startsWith("*") || trimmedLine.startsWith("/*")) {
+					return@forEachIndexed
+				}
+
+				commonK2Issues.forEach { (regex, message) ->
+					if (regex.containsMatchIn(line)) {
+						// Special handling for analyze block to avoid false positives
+						if (message.contains("analyze block")) {
+							// Make sure it's not in a string literal or comment
+							if (!line.contains("\"") || line.indexOf(regex.pattern) < line.indexOf("\"")) {
+								println("⚠️  K2 compatibility issue in ${file.relativeTo(projectDir)}:${lineIndex + 1}")
+								println("   Line: ${line.trim()}")
+								println("   Issue: $message")
+								println()
+								issuesFound = true
+							}
+						} else {
+							println("⚠️  Potential K2 issue in ${file.relativeTo(projectDir)}:${lineIndex + 1}")
+							println("   Line: ${line.trim()}")
+							println("   Issue: $message")
+							println()
+							issuesFound = true
+						}
+					}
+				}
+			}
+		}
+
+		if (!issuesFound) {
+			println("✅ No K2 compatibility issues found in source code")
+		} else {
+			println("📋 Summary: Found potential K2 compatibility issues. Review the suggestions above.")
+			println("💡 Tip: Run './gradlew verifyK2Compilation' to test if your code compiles with K2 enabled")
+		}
+	}
+}
+
+// ... existing code ...
+
+// Update Kotlin compilation to enable K2 explicitly
+tasks.compileKotlin {
+	kotlinOptions {
+		jvmTarget = "17"
+		// Enable K2 compiler explicitly
+		freeCompilerArgs += listOf(
+			"-Xuse-k2"
+		)
+	}
+}
+
+tasks.compileTestKotlin {
+	kotlinOptions {
+		jvmTarget = "17"
+		freeCompilerArgs += listOf(
+			"-Xuse-k2"
+		)
+	}
+}
+
+// ... existing code ...
