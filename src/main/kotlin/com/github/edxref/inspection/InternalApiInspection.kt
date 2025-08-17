@@ -143,7 +143,6 @@ class InternalApiKotlinInspection : AbstractKotlinInspection(), InternalApiInspe
 		return object : KtVisitorVoid() {
 			override fun visitAnnotationEntry(annotationEntry: KtAnnotationEntry) {
 				super.visitAnnotationEntry(annotationEntry)
-				// Remove analyze {} block
 				val declaration = annotationEntry.getStrictParentOfType<KtDeclaration>()
 				if (declaration is KtClassOrObject) {
 					checkAnnotationPlacement(annotationEntry.project, annotationEntry, declaration, holder)
@@ -152,12 +151,18 @@ class InternalApiKotlinInspection : AbstractKotlinInspection(), InternalApiInspe
 
 			override fun visitClassOrObject(classOrObject: KtClassOrObject) {
 				super.visitClassOrObject(classOrObject)
-				// Remove analyze {} block
+
+				// For K2 compatibility, use light class for hierarchy checks when needed
 				val psiClass = classOrObject.toLightClass()
 				if (psiClass != null) {
-					checkClassImplementation(classOrObject.project, psiClass, classOrObject.nameIdentifier ?: classOrObject, holder)
+					checkClassImplementation(
+						classOrObject.project,
+						psiClass,
+						classOrObject.nameIdentifier ?: classOrObject,
+						holder
+					)
 				} else {
-					logIfEnabled(classOrObject.project, log, "Could not get LightClass for Kotlin element ${classOrObject.name}")
+					logIfEnabled(classOrObject.project, log, "Could not get light class for Kotlin element ${classOrObject.name}")
 				}
 			}
 		}

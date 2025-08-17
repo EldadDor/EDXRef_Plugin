@@ -8,7 +8,6 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.util.InheritanceUtil
-import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.asJava.toLightClass
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.*
@@ -70,14 +69,18 @@ interface WSInterfaceSpecificLogic {
 
 			if ((isSetter || isGetter) && method.getAnnotation(propertyAnnotationFqn) == null) {
 				logIfEnabled(project, log, "ERROR: Method '${method.name}' is missing the @$propertyAnnotationShortName annotation.")
+
+				// For K2 compatibility, ensure we highlight the correct element
+				val elementToHighlight = method.nameIdentifier ?: method
 				holder.registerProblem(
-					method.nameIdentifier ?: method,
+					elementToHighlight,
 					MyBundle.message("inspection.wsinterfaceparam.error.missing.property.annotation", method.name, propertyAnnotationShortName),
 					ProblemHighlightType.ERROR
 				)
 			}
 		}
 	}
+
 
 	private fun validateHttpMethodAndGetters(
 		project: Project,
@@ -107,22 +110,41 @@ interface WSInterfaceSpecificLogic {
 			val bodyParamGetters = getters.filter { method ->
 				val wsParamAnnotation = method.getAnnotation(wsParamFqn)
 				val isBodyParamAttr = wsParamAnnotation?.findAttributeValue("isBodyParam")
-				(isBodyParamAttr is PsiLiteralExpression && isBodyParamAttr.value == true) || isBodyParamAttr?.text == "true"
+				(isBodyParamAttr is PsiLiteralExpression && isBodyParamAttr.value == true) ||
+						isBodyParamAttr?.text == "true"
 			}
-			val highlightElementForClassError = wsConsumerAnnotation.findAttributeValue("method") ?: psiClass.nameIdentifier ?: psiClass
+
+			// K2-compatible element highlighting - prefer specific attributes over class
+			val highlightElementForClassError = wsConsumerAnnotation.findAttributeValue("method")
+				?: psiClass.nameIdentifier
+				?: psiClass
 
 			when (bodyParamGetters.size) {
 				0 -> {
 					logIfEnabled(project, log, "ERROR: Getters exist but none marked with isBodyParam=true in ${psiClass.name}")
-					holder.registerProblem(highlightElementForClassError, MyBundle.message("inspection.wsinterfaceparam.error.bodyparam.required"), ProblemHighlightType.ERROR)
+					holder.registerProblem(
+						highlightElementForClassError,
+						MyBundle.message("inspection.wsinterfaceparam.error.bodyparam.required"),
+						ProblemHighlightType.ERROR
+					)
 				}
 
 				1 -> logIfEnabled(project, log, "OK: Found exactly one getter marked with isBodyParam=true in ${psiClass.name}")
+
 				else -> {
 					logIfEnabled(project, log, "ERROR: Multiple getters marked with isBodyParam=true in ${psiClass.name}")
-					holder.registerProblem(highlightElementForClassError, MyBundle.message("inspection.wsinterfaceparam.error.multiple.bodyparam"), ProblemHighlightType.ERROR)
+					holder.registerProblem(
+						highlightElementForClassError,
+						MyBundle.message("inspection.wsinterfaceparam.error.multiple.bodyparam"),
+						ProblemHighlightType.ERROR
+					)
 					bodyParamGetters.forEach { getter ->
-						holder.registerProblem(getter.nameIdentifier ?: getter, MyBundle.message("inspection.wsinterfaceparam.error.multiple.bodyparam"), ProblemHighlightType.ERROR)
+						val getterHighlight = getter.nameIdentifier ?: getter
+						holder.registerProblem(
+							getterHighlight,
+							MyBundle.message("inspection.wsinterfaceparam.error.multiple.bodyparam"),
+							ProblemHighlightType.ERROR
+						)
 					}
 				}
 			}
@@ -130,6 +152,7 @@ interface WSInterfaceSpecificLogic {
 			logIfEnabled(project, log, "OK: No getters found in ${psiClass.name}, skipping isBodyParam check.")
 		}
 	}
+
 }
 
 // --- Combined Interface for Implementation ---
@@ -164,21 +187,35 @@ class WSInterfaceParamJavaInspection : AbstractBaseJavaLocalInspectionTool(), Fu
 }
 
 // --- Kotlin Inspection ---
+// --- Kotlin Inspection ---
 class WSInterfaceParamKotlinInspection : AbstractKotlinInspection(), FullWSInterfaceValidationLogic {
 	override val log = logger<WSInterfaceParamKotlinInspection>() // Provide logger
 	override fun getDisplayName(): String = MyBundle.message("inspection.wsinterfaceparam.displayname")
 
-	override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
+	override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
 		return object : KtVisitorVoid() {
 			override fun visitClassOrObject(classOrObject: KtClassOrObject) {
 				super.visitClassOrObject(classOrObject)
-				analyze(classOrObject) {}
+				// Removed analyze {} block - not needed for basic PSI checks
+
 				if (classOrObject is KtClass && classOrObject.isInterface()) {
-					val psiClass = classOrObject.toLightClass() ?: return // Need light class for logic
 					val project = classOrObject.project
 
-					val wsConsumerAnnotation = psiClass.getAnnotation(getWsConsumerAnnotationFqn(project)) ?: return
+					// Check for @WSConsumer annotation using direct Kotlin PSI first
+					val wsConsumerAnnotationShortName = getWsConsumerAnnotationFqn(project).substringAfterLast('.')
+					val hasWSConsumer = classOrObject.annotationEntries.any {
+						it.shortName?.asString() == wsConsumerAnnotationShortName
+					}
+					if (!hasWSConsumer) return
+
+					// Use light class only when necessary for inheritance checks and method processing
+					val psiClass = classOrObject.toLightClass() ?: return
+
+					// Verify inheritance using light class (needed for InheritanceUtil)
 					if (!isImplementingInterface(psiClass, getWebserviceConsumerFqn(project))) return
+
+					// Get the @WSConsumer annotation from light class for attribute extraction
+					val wsConsumerAnnotation = psiClass.getAnnotation(getWsConsumerAnnotationFqn(project)) ?: return
 
 					// Run interface-specific validations
 					runInterfaceSpecificValidations(project, psiClass, wsConsumerAnnotation, holder)
@@ -193,4 +230,3 @@ class WSInterfaceParamKotlinInspection : AbstractKotlinInspection(), FullWSInter
 		}
 	}
 }
-

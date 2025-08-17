@@ -13,6 +13,7 @@ import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.psi.PsiElementVisitor
 import org.jetbrains.kotlin.asJava.toLightClass
+import org.jetbrains.kotlin.asJava.toLightMethods
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.KtVisitorVoid
 import org.jetbrains.kotlin.psi.KtNamedFunction
@@ -184,35 +185,33 @@ class WSHeaderOnMethodJavaInspection : AbstractBaseJavaLocalInspectionTool(), WS
 }
 
 // --- Kotlin Inspection ---
+// ... existing code ...
 class WSHeaderOnMethodKotlinInspection : AbstractKotlinInspection(), WSHeaderOnMethodInspectionLogic {
 	override val log = logger<WSHeaderOnMethodKotlinInspection>()
 	override fun getDisplayName(): String = MyBundle.message("inspection.wsheaderonmethod.displayname")
 
 	override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
 		return object : KtVisitorVoid() {
-			override fun visitNamedFunction(function: KtNamedFunction) {
-				super.visitNamedFunction(function)
-				// Use K2 analysis API instead of light classes
-				analyze(function) {
+				override fun visitNamedFunction(function: KtNamedFunction) {
+					super.visitNamedFunction(function)
+
 					val containingClassOrObject = function.containingClassOrObject
 					val containingLightClass = containingClassOrObject?.toLightClass()
+
 					if (containingLightClass != null) {
 						// Find the corresponding PsiMethod in the light class
-						val psiMethod = containingLightClass.findMethodsByName(function.name, false)
-							.firstOrNull { it.parameterList.parametersCount == function.valueParameters.size } // Basic matching
+						val psiMethod = containingLightClass.findMethodsByName(function.name ?: "", false)
+							.firstOrNull { it.parameterList.parametersCount == function.valueParameters.size }
+
 						if (psiMethod != null) {
-							validateMethodHeader(function.project, psiMethod, holder) // Call specific logic
+							validateMethodHeader(function.project, psiMethod, holder)
 						} else {
 							logIfEnabled(function.project, log, "Could not find matching PsiMethod for Kotlin function ${function.name}")
 						}
 					} else {
 						logIfEnabled(function.project, log, "Could not get LightClass for containing element of ${function.name}")
 					}
-					// Your inspection logic here using the new K2 analysis API
-					// This provides more reliable access to semantic information
 				}
-			}
 		}
 	}
-
 }

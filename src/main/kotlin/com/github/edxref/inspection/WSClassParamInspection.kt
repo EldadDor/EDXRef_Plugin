@@ -86,11 +86,11 @@ class WSClassParamJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSClas
 }
 
 // --- Kotlin Inspection ---
-class WSClassParamKotlinInspection : AbstractKotlinInspection() {
-	val log = logger<WSClassParamKotlinInspection>()
+class WSClassParamKotlinInspection : AbstractKotlinInspection(), WSClassParamInspectionLogic {
+	override val log = logger<WSClassParamKotlinInspection>()
 	override fun getDisplayName(): String = MyBundle.message("inspection.wsclassparam.displayname")
 
-	override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
+	override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
 		return object : KtVisitorVoid() {
 			override fun visitClassOrObject(classOrObject: KtClassOrObject) {
 				super.visitClassOrObject(classOrObject)
