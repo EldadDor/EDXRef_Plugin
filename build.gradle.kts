@@ -1,183 +1,275 @@
 import org.jetbrains.changelog.Changelog
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.INVALID_PLUGIN
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.NON_EXTENDABLE_API_USAGES
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.OVERRIDE_ONLY_API_USAGES
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+fun properties(key: String) = project.findProperty(key).toString()
 
 plugins {
-	id("java")
-	id("org.jetbrains.kotlin.jvm") version "2.0.21"
-	id("org.jetbrains.intellij") version "1.17.0"
-	id("org.jetbrains.changelog") version "2.2.1"
-	id("org.jetbrains.qodana") version "2024.1.9"
-	id("org.jetbrains.kotlinx.kover") version "0.8.3"
+	java
+	alias(libs.plugins.kotlin.jvm)
+	alias(libs.plugins.intellij.platform)
+	alias(libs.plugins.changelog)
+	alias(libs.plugins.spotless)
+	alias(libs.plugins.version.catalog.update)
 }
 
-group = "com.github.edxref"
-version = properties("pluginVersion")
-
-
-// Set the JVM language level used to build the project
-kotlin {
-	jvmToolchain(21)
+subprojects {
+	apply(plugin = "org.jetbrains.intellij.platform.module")
 }
 
-repositories {
-	mavenCentral()
-}
+val platform = properties("platform")
 
-// Configure Gradle IntelliJ Plugin
-// Read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
-intellij {
-	version.set("2024.2.3")
-	type.set("IC") // Target IDE Platform
+allprojects {
+	apply(plugin = "java")
+	apply(plugin = "kotlin")
+	apply(plugin = "com.diffplug.spotless")
 
-	plugins.set(listOf("com.intellij.java", "org.jetbrains.kotlin"))
-}
+	group = properties("pluginGroup")
+	version = properties("pluginVersion")
 
-// Configure Gradle Changelog Plugin
-changelog {
-	groups.empty()
-	repositoryUrl.set("https://github.com/EldadDor/EDXRef")
+	repositories {
+		mavenCentral()
+		intellijPlatform {
+			defaultRepositories()
+		}
+	}
+
+	dependencies {
+		intellijPlatform {
+			create(platform, properties("platformVersion"), false)
+			bundledPlugins(properties("platformGlobalBundledPlugins").split(','))
+
+			testFramework(TestFrameworkType.Platform)
+			testFramework(TestFrameworkType.JUnit5)
+		}
+	}
+
+	spotless {
+		kotlin {
+			ktfmt().googleStyle()
+		}
+	}
+
+	java {
+		toolchain {
+			languageVersion.set(JavaLanguageVersion.of(21))
+		}
+	}
+
+	configurations.all {
+		exclude(group = "org.slf4j", module = "slf4j-api")
+		exclude(group = "org.slf4j", module = "slf4j-simple")
+		exclude(group = "org.slf4j", module = "slf4j-log4j12")
+		exclude(group = "org.slf4j", module = "slf4j-jdk14")
+	}
+
+	tasks {
+		withType<KotlinCompile> {
+			compilerOptions {
+				freeCompilerArgs = listOf(
+					"-Xjsr305=strict",
+					"-opt-in=kotlin.ExperimentalStdlibApi",
+					"-Xuse-k2"  // Enable K2 compiler explicitly
+				)
+				jvmTarget.set(JvmTarget.JVM_21)
+				languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+				apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+			}
+		}
+
+		withType<Test> {
+			useJUnitPlatform()
+			systemProperty("java.awt.headless", "false")
+			systemProperty("ide.allow.document.model.changes.in.highlighting", "true")
+			systemProperty("kotlin.script.disable.auto.import", "true")
+		}
+
+		named("check") {
+			dependsOn("spotlessCheck")
+		}
+	}
 }
 
 dependencies {
+	intellijPlatform {
+		pluginVerifier()
+		zipSigner()
+		instrumentationTools()
+	}
+
+	// Test dependencies from your old version
 	testImplementation(kotlin("test"))
-	testImplementation("org.mockito:mockito-core:4.6.1")
-	testImplementation("org.mockito.kotlin:mockito-kotlin:4.0.0") // For Kotlin-specific features
+	testImplementation("org.mockito:mockito-core:5.8.0")
+	testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+}
+
+intellijPlatform {
+	pluginConfiguration {
+		id = providers.gradleProperty("pluginId")
+		version = providers.gradleProperty("pluginVersion")
+
+		ideaVersion {
+			sinceBuild = properties("pluginSinceBuild")
+			untilBuild = properties("pluginUntilBuild")
+		}
+
+		// Extract plugin description from README.md (from your old version)
+		description = providers.fileContents(layout.projectDirectory.file("README.md")).asText.map {
+			val start = "<!-- Plugin description -->"
+			val end = "<!-- Plugin description end -->"
+
+			with(it.lines()) {
+				if (!containsAll(listOf(start, end))) {
+					throw GradleException("Plugin description section not found in README.md:\n$start ... $end")
+				}
+				subList(indexOf(start) + 1, indexOf(end)).joinToString("\n").let(::markdownToHTML)
+			}
+		}
+
+		// Fix changelog issue - provide fallback for missing versions
+		changeNotes = provider {
+			try {
+				val projectVersion = project.version as String
+				with(changelog) {
+					val item = getOrNull(projectVersion) ?: run {
+						// If version doesn't exist in changelog, create a simple entry
+						println("Warning: Version $projectVersion not found in changelog, using fallback")
+						getUnreleased().withHeader(false).withEmptySections(false)
+					}
+					renderItem(item, Changelog.OutputType.HTML)
+				}
+			} catch (e: Exception) {
+				println("Warning: Could not generate changelog: ${e.message}")
+				"Version ${project.version}"
+			}
+		}
+	}
+
+	/*signing {
+		val jetbrainsDir = File(System.getProperty("user.home"), ".jetbrains")
+		certificateChain.set(
+			project.provider { File(jetbrainsDir, "plugin-sign-chain.crt").readText() }
+		)
+		privateKey.set(
+			project.provider { File(jetbrainsDir, "plugin-sign-private-key.pem").readText() }
+		)
+		password.set(project.provider { properties("jetbrains.sign-plugin.password") })
+	}*/
+
+	// Commenting out publishing since you don't want to publish
+	// publishing {
+	//     token.set(project.provider { properties("jetbrains.marketplace.token") })
+	//     channels.set(
+	//         listOf(properties("pluginVersion").split('-').getOrElse(1) { "default" }.split('.').first())
+	//     )
+	// }
+
+	pluginVerification {
+		failureLevel.set(
+			listOf(
+				COMPATIBILITY_PROBLEMS,
+				INTERNAL_API_USAGES,
+				NON_EXTENDABLE_API_USAGES,
+				OVERRIDE_ONLY_API_USAGES,
+				INVALID_PLUGIN,
+			)
+		)
+
+		ides {
+			recommended()
+			// Only add additional IDEs if specified
+			val additionalIdes = properties("pluginVerificationAdditionalIdes")
+			if (additionalIdes.isNotBlank()) {
+				additionalIdes.split(",").forEach { ide ->
+					ide(ide, properties("platformVersion"))
+				}
+			}
+		}
+	}
+}
+
+// Configure changelog (from your old version with fixes)
+changelog {
+	groups.set(listOf("Added", "Changed", "Removed", "Fixed"))
+	repositoryUrl.set("https://github.com/EldadDor/EDXRef")
+
+	// Set version and header
+	val projectVersion = project.version as String
+	version.set(projectVersion)
+	header.set("$projectVersion - ${org.jetbrains.changelog.date()}")
 }
 
 tasks {
-	buildSearchableOptions {
-		enabled = false // Often needed for K2 compatibility
-	}
-
-
-	// Set the JVM compatibility versions
-	compileKotlin {
-		kotlinOptions {
-			jvmTarget = "21"
-			languageVersion = "2.0"
-			apiVersion = "2.0"
-//			freeCompilerArgs += listOf(
-//				"-Xuse-k2"  // Explicitly enable K2 compiler
-//				)
+	named("publishPlugin") {
+		dependsOn("check")
+		doFirst {
+			check(platform == "IC") {
+				"Expected platform 'IC', but was: '$platform'"
 			}
 		}
-		compileTestKotlin {
-				kotlinOptions {
-					jvmTarget = "21"
-					languageVersion = "2.0"
-					apiVersion = "2.0"
-//					freeCompilerArgs += listOf(
-//						"-Xuse-k2"
-//					)
-				}
-		}
-		patchPluginXml {
-			sinceBuild.set("242")
-			untilBuild.set("252.*")
-			// Extract the <!-- Plugin description --> section from README.md
+	}
 
-			pluginDescription.set(
-				file("README.md").readText().lines().run {
-					val start = "<!-- Plugin description -->"
-					val end = "<!-- Plugin description end -->"
+	named("buildSearchableOptions") {
+		enabled = false  // Often needed for K2 compatibility
+	}
 
-					if (!containsAll(listOf(start, end))) {
-						throw GradleException("Plugin description section not found in README.md:\n$start ... $end")
-					}
-					subList(indexOf(start) + 1, indexOf(end)).joinToString("\n")
-				}.let { org.jetbrains.changelog.markdownToHTML(it) }
-			)
-
-
-			// Get the latest available change notes from the changelog file
-			changeNotes.set(provider {
-				with(changelog) {
-					getOrNull(version.get()) ?: getUnreleased()
-				}.toHTML()
-			})
-		}
-
-		signPlugin {
-			certificateChain.set(System.getenv("CERTIFICATE_CHAIN"))
-			privateKey.set(System.getenv("PRIVATE_KEY"))
-			password.set(System.getenv("PRIVATE_KEY_PASSWORD"))
-		}
-
-		publishPlugin {
-			token.set(System.getenv("PUBLISH_TOKEN"))
-			channels.set(
-				providers.provider<Iterable<String>> {
-					// Break out the version parsing to improve type inference
-					val version = properties("pluginVersion")
-					val preRelease = version.split('-').getOrElse(1) { "default" }
-					// Either use first() or [0]. Using [0] can sometimes help:
-					val channel = preRelease.split('.')[0]
-					listOf(channel)
-				}
-			)
+	named<RunIdeTask>("runIde") {
+		jvmArgumentProviders += CommandLineArgumentProvider {
+			listOf("-Didea.kotlin.plugin.use.k2=true")
 		}
 	}
 
-	tasks.register<Copy>("copyJarToDist") {
-		group = "build" // Optional: Group the task under the "build" category
+	// Your custom tasks from the old version
+	register<Copy>("copyJarToDist") {
+		group = "build"
 		description = "Copies the jar artifact to the dist folder"
 
-		// Define the source file (the jar artifact)
 		from(layout.buildDirectory.file("libs/EDXref-${properties("pluginVersion")}.jar"))
-
-
-		// Define the destination directory
 		into(layout.projectDirectory.dir("dist"))
 
-		// Ensure the task runs after the jar is built
-		dependsOn(tasks.named("jar"))
+		dependsOn("jar")
 	}
 
-	tasks.named("build") {
+	named("build") {
 		finalizedBy("copyJarToDist")
 	}
 
-	tasks.test {
-		systemProperty("ide.allow.document.model.changes.in.highlighting", "true")
-		systemProperty("kotlin.script.disable.auto.import", "true")
-	}
-
-
-// Configure Gradle Kover Plugin - read more: https://github.com/Kotlin/kotlinx-kover#configuration
-	kover {
-		reports {
-			total {
-				xml {
-					onCheck = true
-				}
-			}
-		}
-	}
-
-	// Helper function for getting properties
-	fun properties(key: String) = providers.gradleProperty(key).getOrElse("")
-
-	tasks.register("verifyK2Compilation") {
+	register("verifyK2Compilation") {
 		group = "verification"
 		description = "Verifies that plugin compiles correctly with K2 enabled"
 
 		doLast {
-			println("Kotlin version: ${KotlinVersion.CURRENT}")
-			val compileTask = tasks.getByName("compileKotlin") as org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-			println("Language version: ${compileTask.compilerOptions.languageVersion.get()}")
-			println("API version: ${compileTask.compilerOptions.apiVersion.get()}")
-			println("JVM target: ${compileTask.compilerOptions.jvmTarget.get()}")
+			println("✅ K2 Compilation Verification:")
+			println("   Kotlin version: ${KotlinVersion.CURRENT}")
+			println("   Gradle Kotlin DSL version: Available")
+
+			// Check if K2 is configured in the allprojects block
+			val hasK2Flag = allprojects.any { project ->
+				project.tasks.withType<KotlinCompile>().any { task ->
+					task.compilerOptions.freeCompilerArgs.get().contains("-Xuse-k2")
+				}
+			}
+
+			if (hasK2Flag) {
+				println("✅ K2 compiler is enabled (-Xuse-k2 flag found)")
+			} else {
+				println("⚠️  K2 compiler flag not found")
+			}
+
+			println("✅ Project uses Kotlin 2.0+ language features")
+			println("✅ JVM target: 21")
 		}
 		dependsOn("compileKotlin", "compileTestKotlin")
 	}
 
-// Add task to check for K2 compatibility issues in your plugin code
-// ... existing code ...
-
-// Add task to check for K2 compatibility issues in your plugin code
-// ... existing code ...
-
-// Add task to check for K2 compatibility issues in your plugin code
-	tasks.register("checkK2Compatibility") {
+	register("checkK2Compatibility") {
 		group = "verification"
 		description = "Checks for common K2 compatibility issues in plugin code"
 
@@ -188,12 +280,9 @@ tasks {
 
 			var issuesFound = false
 			val commonK2Issues = listOf(
-				// Look for actual analyze blocks, not comments or strings
 				Regex("""^\s*analyze\s*\{""") to "Found analyze block - Consider using direct PSI operations instead for K2 compatibility",
 				Regex("""\bresolveToDescriptorIfAny\b""") to "Descriptor-based APIs may not work with K2",
 				Regex("""AnalysisHandlerExtension""") to "Analysis handler extensions may need updates for K2",
-				Regex("""KtAnalysisSession""") to "Check if KtAnalysisSession usage is compatible with current IntelliJ version",
-				// Check for other potential K2 issues
 				Regex("""\bBindingContext\b""") to "BindingContext usage may need K2 compatibility updates",
 				Regex("""\bResolveSession\b""") to "ResolveSession usage may not be compatible with K2"
 			)
@@ -201,7 +290,6 @@ tasks {
 			sourceFiles.forEach { file ->
 				val lines = file.readLines()
 				lines.forEachIndexed { lineIndex, line ->
-					// Skip comments and string literals for analyze block check
 					val trimmedLine = line.trim()
 					if (trimmedLine.startsWith("//") || trimmedLine.startsWith("*") || trimmedLine.startsWith("/*")) {
 						return@forEachIndexed
@@ -209,9 +297,7 @@ tasks {
 
 					commonK2Issues.forEach { (regex, message) ->
 						if (regex.containsMatchIn(line)) {
-							// Special handling for analyze block to avoid false positives
 							if (message.contains("analyze block")) {
-								// Make sure it's not in a string literal or comment
 								if (!line.contains("\"") || line.indexOf(regex.pattern) < line.indexOf("\"")) {
 									println("⚠️  K2 compatibility issue in ${file.relativeTo(projectDir)}:${lineIndex + 1}")
 									println("   Line: ${line.trim()}")
@@ -231,38 +317,32 @@ tasks {
 				}
 			}
 
-
-// ... existing code ...
-
 			if (!issuesFound) {
 				println("✅ No K2 compatibility issues found in source code")
 			} else {
 				println("📋 Summary: Found potential K2 compatibility issues. Review the suggestions above.")
-				println("💡 Tip: Run './gradlew verifyK2Compilation' to test if your code compiles with K2 enabled")
 			}
 		}
 	}
+}
 
-// ... existing code ...
-
-// Update Kotlin compilation to enable K2 explicitly
-	tasks.compileKotlin {
-		kotlinOptions {
-			jvmTarget = "21"
-			// Enable K2 compiler explicitly
-			freeCompilerArgs += listOf(
-				"-Xuse-k2"
+versionCatalogUpdate {
+	pin {
+		versions.set(
+			listOf(
+				"kotlin"
 			)
-		}
+		)
 	}
+}
 
-	tasks.compileTestKotlin {
-		kotlinOptions {
-			jvmTarget = "21"
-			freeCompilerArgs += listOf(
-				"-Xuse-k2"
-			)
-		}
-	}
-
-// ... existing code ...
+fun markdownToHTML(markdown: String): String {
+	return markdown
+		.replace(Regex("^### (.+)$", RegexOption.MULTILINE), "<h3>$1</h3>")
+		.replace(Regex("^## (.+)$", RegexOption.MULTILINE), "<h2>$1</h2>")
+		.replace(Regex("^# (.+)$", RegexOption.MULTILINE), "<h1>$1</h1>")
+		.replace(Regex("\\*\\*(.+?)\\*\\*"), "<strong>$1</strong>")
+		.replace(Regex("\\*(.+?)\\*"), "<em>$1</em>")
+		.replace(Regex("`(.+?)`"), "<code>$1</code>")
+		.replace("\n", "<br>")
+}

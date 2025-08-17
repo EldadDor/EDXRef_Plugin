@@ -5,53 +5,49 @@ import com.intellij.codeInspection.InspectionManager
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.testFramework.PlatformTestUtil
-import com.intellij.testFramework.RunsInEdt
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import org.junit.Before
-import org.junit.Test
 
 class MyAnnotationInspectionTest : BasePlatformTestCase() {
 
-    override fun getTestDataPath(): String = "src/test/testData" // adjust, if necessary
+  override fun getTestDataPath(): String = "src/test/testData" // adjust, if necessary
 
-//    @Before
-    override fun setUp() {
-        super.setUp()
-        System.setProperty("kotlin.script.disable.auto.import", "true")
-        System.setProperty("kotlin.script.disable.compilation", "true")
-        System.setProperty("idea.force.use.core.classloader.for.plugin.path", "true")
-    }
+  //    @Before
+  override fun setUp() {
+    super.setUp()
+    System.setProperty("kotlin.script.disable.auto.import", "true")
+    System.setProperty("kotlin.script.disable.compilation", "true")
+    System.setProperty("idea.force.use.core.classloader.for.plugin.path", "true")
+  }
 
-
-    /**
-     * Repeatedly dispatch pending events (which may include background PSI updates)
-     * before performing highlighting. This helper will try for up to [maxIterations]
-     * before giving up.
-     */
-    private fun waitForStableHighlighting(maxIterations: Int = 10) {
-        var iterations = 0
-        while (iterations < maxIterations) {
-            try {
-                ApplicationManager.getApplication().invokeAndWait {
-                    myFixture.doHighlighting()
-                    myFixture.checkHighlighting()
-                }
-                // Force highlighting and check that no PSI modifications occur.
-                return // highlighting is stable!
-            } catch (e: AssertionError) {
-                // When the assertion is thrown due to PSI updates, let’s give it another try.
-                PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-                iterations++
-            }
+  /**
+   * Repeatedly dispatch pending events (which may include background PSI updates) before performing
+   * highlighting. This helper will try for up to [maxIterations] before giving up.
+   */
+  private fun waitForStableHighlighting(maxIterations: Int = 10) {
+    var iterations = 0
+    while (iterations < maxIterations) {
+      try {
+        ApplicationManager.getApplication().invokeAndWait {
+          myFixture.doHighlighting()
+          myFixture.checkHighlighting()
         }
-        // One more call so that any persistent issue is reported.
-        myFixture.doHighlighting()
-        myFixture.checkHighlighting()
+        // Force highlighting and check that no PSI modifications occur.
+        return // highlighting is stable!
+      } catch (e: AssertionError) {
+        // When the assertion is thrown due to PSI updates, let’s give it another try.
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        iterations++
+      }
     }
+    // One more call so that any persistent issue is reported.
+    myFixture.doHighlighting()
+    myFixture.checkHighlighting()
+  }
 
-//    @Test
-    fun testPearlWebServiceConsumer_WithUrlAndProtocol() {
-        val fileContent = """
+  //    @Test
+  fun testPearlWebServiceConsumer_WithUrlAndProtocol() {
+    val fileContent =
+      """
             package test
 
             import com.example.WSConsumer
@@ -67,17 +63,19 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
                 sslCertificateValidation = true
             )
             class PearlWebServiceConsumer {}
-        """.trimIndent()
+        """
+        .trimIndent()
 
-        myFixture.configureByText("Test.kt", fileContent)
-//        myFixture.enableInspections(MyAnnotationInspection())
-        waitForStableHighlighting()  // use our helper instead of a direct call to checkHighlighting()
-    }
+    myFixture.configureByText("Test.kt", fileContent)
+    //        myFixture.enableInspections(MyAnnotationInspection())
+    waitForStableHighlighting() // use our helper instead of a direct call to checkHighlighting()
+  }
 
-//    @Test
-//    @RunsInEdt
-    fun testWebServiceConsumer_AllValuesOk() {
-        val fileContent = """
+  //    @Test
+  //    @RunsInEdt
+  fun testWebServiceConsumer_AllValuesOk() {
+    val fileContent =
+      """
             package test
 
             import com.example.WSConsumer
@@ -93,16 +91,18 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
                 sslCertificateValidation = true
             )
             class WebServiceConsumer {}
-        """.trimIndent()
+        """
+        .trimIndent()
 
-        myFixture.configureByText("Test.kt", fileContent)
-//        myFixture.enableInspections(MyAnnotationInspection())
-        waitForStableHighlighting()
-    }
+    myFixture.configureByText("Test.kt", fileContent)
+    //        myFixture.enableInspections(MyAnnotationInspection())
+    waitForStableHighlighting()
+  }
 
-//    @Test
-    fun testAnnotationInspection() {
-        val fileContent = """
+  //    @Test
+  fun testAnnotationInspection() {
+    val fileContent =
+      """
         package test
         
         import com.example.WSConsumer
@@ -118,23 +118,24 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
             sslCertificateValidation = true
         )
         class PearlWebServiceConsumer {}
-    """.trimIndent()
+    """
+        .trimIndent()
 
-        val file = myFixture.configureByText("Test.kt", fileContent)
+    val file = myFixture.configureByText("Test.kt", fileContent)
 
-        // Create inspection instance manually
-        val inspection = WSConsumerJavaInspection()
+    // Create inspection instance manually
+    val inspection = WSConsumerJavaInspection()
 
-        // Create problems holder
-        val problemsHolder = ProblemsHolder(InspectionManager.getInstance(project), file, false)
+    // Create problems holder
+    val problemsHolder = ProblemsHolder(InspectionManager.getInstance(project), file, false)
 
-        // Build visitor and run it on the file
-        val visitor = inspection.buildVisitor(problemsHolder, false)
-        visitor.visitFile(file);
-        file.accept(visitor)
+    // Build visitor and run it on the file
+    val visitor = inspection.buildVisitor(problemsHolder, false)
+    visitor.visitFile(file)
+    file.accept(visitor)
 
-        // Check results
-        val problems = problemsHolder.results
-        // Assert on problems as needed
-    }
+    // Check results
+    val problems = problemsHolder.results
+    // Assert on problems as needed
+  }
 }
