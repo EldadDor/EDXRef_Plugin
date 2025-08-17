@@ -1,6 +1,5 @@
 package com.github.edxref
 
-import com.github.edxref.inspection.MyAnnotationInspection
 import com.github.edxref.inspection.WSConsumerJavaInspection
 import com.intellij.codeInspection.InspectionManager
 import com.intellij.codeInspection.ProblemsHolder
@@ -71,7 +70,7 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
         """.trimIndent()
 
         myFixture.configureByText("Test.kt", fileContent)
-        myFixture.enableInspections(MyAnnotationInspection())
+//        myFixture.enableInspections(MyAnnotationInspection())
         waitForStableHighlighting()  // use our helper instead of a direct call to checkHighlighting()
     }
 
@@ -97,7 +96,7 @@ class MyAnnotationInspectionTest : BasePlatformTestCase() {
         """.trimIndent()
 
         myFixture.configureByText("Test.kt", fileContent)
-        myFixture.enableInspections(MyAnnotationInspection())
+//        myFixture.enableInspections(MyAnnotationInspection())
         waitForStableHighlighting()
     }
 

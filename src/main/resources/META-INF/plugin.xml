@@ -6,10 +6,10 @@
 
 
     <!-- Add version information -->
-    <version>1.1.0</version>
+    <version>1.1.1</version>
 
     <!-- Add IDE compatibility information -->
-    <idea-version since-build="223.8836" until-build="251.*"/>
+    <idea-version since-build="223.8836" until-build="252.*"/>
     <description><![CDATA[
         <p>This is an Inspection Suite plugin, that used for the WebServiceConsumer & PearlWebServiceConsumer</p>
         <h2>Key Features</h2>
@@ -76,7 +76,7 @@
                 enabledByDefault="true"
                 level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSClassParamKotlinInspection"/>
-        <!-- NEW: Register WSInterfaceParamInspection -->
+<!--         NEW: Register WSInterfaceParamInspection -->
         <localInspection
                 language="JAVA"
                 shortName="WSInterfaceParamValidationJava"
@@ -139,7 +139,7 @@
                          enabledByDefault="true"
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.InternalApiKotlinInspection"/>
-        <!--        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>-->
+                <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
 
         <!-- Unified EDXRef Plugin Settings -->
         <projectConfigurable

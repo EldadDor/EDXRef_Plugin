@@ -13,6 +13,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.codeStyle.JavaCodeStyleManager
 import com.intellij.psi.util.InheritanceUtil
+import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
@@ -371,76 +372,77 @@ class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspect
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor =
         object : KtVisitorVoid() {
             override fun visitAnnotationEntry(annotationEntry: KtAnnotationEntry) {
-                super.visitAnnotationEntry(annotationEntry)
+				super.visitAnnotationEntry(annotationEntry)
+				analyze(annotationEntry) {
+					val project = annotationEntry.project
+					val wsConsumerAnnotationFqn = getWsConsumerAnnotationFqn(project)
 
-                val project = annotationEntry.project
-                val wsConsumerAnnotationFqn = getWsConsumerAnnotationFqn(project)
+					// Basic check using short name - refine with type resolution if needed
+					val shortName = annotationEntry.shortName?.asString()
+					if (shortName != wsConsumerAnnotationFqn.substringAfterLast('.')) return
 
-                // Basic check using short name - refine with type resolution if needed
-                val shortName = annotationEntry.shortName?.asString()
-                if (shortName != wsConsumerAnnotationFqn.substringAfterLast('.')) return
+					// TODO: Add proper FQN check using resolved types for better accuracy
+					// val resolvedFqn = annotationEntry.resolveToFQName(...)
+					// if (resolvedFqn?.asString() != wsConsumerAnnotationFqn) return
 
-                // TODO: Add proper FQN check using resolved types for better accuracy
-                // val resolvedFqn = annotationEntry.resolveToFQName(...)
-                // if (resolvedFqn?.asString() != wsConsumerAnnotationFqn) return
+					logIfEnabled(project, logger<WSConsumerKotlinInspection>(), "Found @$shortName annotation, visit")
 
-                logIfEnabled(project, logger<WSConsumerKotlinInspection>(), "Found @$shortName annotation, visit")
+					val ktClass: KtClass = annotationEntry.getStrictParentOfType() ?: return
 
-                val ktClass: KtClass = annotationEntry.getStrictParentOfType() ?: return
+					val webserviceConsumerFqn = getWebserviceConsumerFqn(project) // Get from settings
+					// Basic check - refine with type resolution
+					// Use a placeholder FQN for PearlWebserviceConsumer - ADJUST THIS
+					val pearlConsumerShortName = "PearlWebserviceConsumer"
+					val isPearlWebserviceConsumer = ktClass.superTypeListEntries.any {
+						it.typeReference?.text?.contains(pearlConsumerShortName) == true
+					}
 
-                val webserviceConsumerFqn = getWebserviceConsumerFqn(project) // Get from settings
-                // Basic check - refine with type resolution
-                // Use a placeholder FQN for PearlWebserviceConsumer - ADJUST THIS
-                val pearlConsumerShortName = "PearlWebserviceConsumer"
-                val isPearlWebserviceConsumer = ktClass.superTypeListEntries.any {
-                    it.typeReference?.text?.contains(pearlConsumerShortName) == true
-                }
+					// Helper to extract literal text
+					fun getArgumentText(name: String): String {
+						val arg = annotationEntry.valueArguments.find {
+							// Use corrected access path here too
+							it.getArgumentName()?.asName?.asString() == name
+						} ?: return ""
+						val expr = arg.getArgumentExpression()
+						val text = expr?.text ?: ""
+						return if (expr is KtStringTemplateExpression && text.startsWith("\"") && text.endsWith("\"")) {
+							text.substring(1, text.length - 1)
+						} else {
+							text
+						}
+					}
 
-                // Helper to extract literal text
-                fun getArgumentText(name: String): String {
-                    val arg = annotationEntry.valueArguments.find {
-                        // Use corrected access path here too
-                        it.getArgumentName()?.asName?.asString() == name
-                    } ?: return ""
-                    val expr = arg.getArgumentExpression()
-                    val text = expr?.text ?: ""
-                    return if (expr is KtStringTemplateExpression && text.startsWith("\"") && text.endsWith("\"")) {
-                        text.substring(1, text.length - 1)
-                    } else {
-                        text
-                    }
-                }
+					val urlValue = getArgumentText("url")
+					val pathValue = getArgumentText("path")
+					val sslText = getArgumentText("sslCertificateValidation")
+					val sslCertificateValidation = if (sslText.isEmpty()) true else sslText.equals("true", ignoreCase = true)
 
-                val urlValue = getArgumentText("url")
-                val pathValue = getArgumentText("path")
-                val sslText = getArgumentText("sslCertificateValidation")
-                val sslCertificateValidation = if (sslText.isEmpty()) true else sslText.equals("true", ignoreCase = true)
+					val msConsumerArg = annotationEntry.valueArguments.find {
+						// Use corrected access path here too
+						it.getArgumentName()?.asName?.asString() == "msConsumer"
+					}
+					val msConsumerExprText = msConsumerArg?.getArgumentExpression()?.text
+					val hasMsConsumer = msConsumerExprText != null &&
+							msConsumerExprText.isNotBlank() &&
+							!msConsumerExprText.matches(Regex("""\[\s*]""")) &&
+							!msConsumerExprText.matches(Regex("""\{\s*}""")) &&
+							!msConsumerExprText.equals("arrayOf()", ignoreCase = true)
+					val msConsumerValue = msConsumerExprText ?: ""
 
-                val msConsumerArg = annotationEntry.valueArguments.find {
-                    // Use corrected access path here too
-                    it.getArgumentName()?.asName?.asString() == "msConsumer"
-                }
-                val msConsumerExprText = msConsumerArg?.getArgumentExpression()?.text
-                val hasMsConsumer = msConsumerExprText != null &&
-                        msConsumerExprText.isNotBlank() &&
-                        !msConsumerExprText.matches(Regex("""\[\s*]""")) &&
-                        !msConsumerExprText.matches(Regex("""\{\s*}""")) &&
-                        !msConsumerExprText.equals("arrayOf()", ignoreCase = true)
-                val msConsumerValue = msConsumerExprText ?: ""
-
-                // Call common logic
-                checkWSConsumerAnnotation(
-                    project,
-                    annotationEntry,
-                    holder,
-                    urlValue,
-                    pathValue,
-                    sslCertificateValidation,
-                    hasMsConsumer,
-                    msConsumerValue,
-                    isPearlWebserviceConsumer,
-                    false // isJava = false
-                )
-            }
+					// Call common logic
+					checkWSConsumerAnnotation(
+						project,
+						annotationEntry,
+						holder,
+						urlValue,
+						pathValue,
+						sslCertificateValidation,
+						hasMsConsumer,
+						msConsumerValue,
+						isPearlWebserviceConsumer,
+						false // isJava = false
+					)
+				}
+			}
         }
 }
