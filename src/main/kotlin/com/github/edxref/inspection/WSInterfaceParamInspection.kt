@@ -8,9 +8,13 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.util.InheritanceUtil
-import org.jetbrains.kotlin.asJava.toLightClass
-import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.*
+import com.intellij.codeInspection.AbstractBaseUastLocalInspectionTool
+import com.intellij.uast.UastHintedVisitorAdapter
+import org.jetbrains.kotlin.asJava.toLightClass
+import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
+import org.jetbrains.uast.UClass
+import org.jetbrains.uast.visitor.AbstractUastNonRecursiveVisitor
 
 
 // --- Settings Accessors (Keep relevant ones or move to util) ---
@@ -26,7 +30,7 @@ private fun logIfEnabled(project: Project, logger: Logger, message: String) {
 	}
 }
 
-private fun isImplementingInterface(psiClass: PsiClass, interfaceFqn: String): Boolean {
+fun isImplementingInterface(psiClass: PsiClass, interfaceFqn: String): Boolean {
 	if (interfaceFqn.isBlank()) return false
 	return InheritanceUtil.isInheritor(psiClass, interfaceFqn)
 }
@@ -187,46 +191,41 @@ class WSInterfaceParamJavaInspection : AbstractBaseJavaLocalInspectionTool(), Fu
 }
 
 // --- Kotlin Inspection ---
-// --- Kotlin Inspection ---
-class WSInterfaceParamKotlinInspection : AbstractKotlinInspection(), FullWSInterfaceValidationLogic {
-	override val log = logger<WSInterfaceParamKotlinInspection>() // Provide logger
+class WSInterfaceParamKotlinInspection : AbstractBaseUastLocalInspectionTool(), FullWSInterfaceValidationLogic {
+	override val log = logger<WSInterfaceParamKotlinInspection>()
 	override fun getDisplayName(): String = MyBundle.message("inspection.wsinterfaceparam.displayname")
 
 	override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
-		return object : KtVisitorVoid() {
-			override fun visitClassOrObject(classOrObject: KtClassOrObject) {
-				super.visitClassOrObject(classOrObject)
-				// Removed analyze {} block - not needed for basic PSI checks
+		return UastHintedVisitorAdapter.create(
+			holder.file.language,
+			object : AbstractUastNonRecursiveVisitor() {
+				override fun visitClass(node: UClass): Boolean {
+					val sourcePsi = node.sourcePsi
+					if (sourcePsi is KtClass && sourcePsi.isInterface()) {
+						val psiClass = node.javaPsi
+						val project = sourcePsi.project
 
-				if (classOrObject is KtClass && classOrObject.isInterface()) {
-					val project = classOrObject.project
+						// Check for @WSConsumer annotation
+						val wsConsumerAnnotation = psiClass.getAnnotation(getWsConsumerAnnotationFqn(project))
+							?: return false
 
-					// Check for @WSConsumer annotation using direct Kotlin PSI first
-					val wsConsumerAnnotationShortName = getWsConsumerAnnotationFqn(project).substringAfterLast('.')
-					val hasWSConsumer = classOrObject.annotationEntries.any {
-						it.shortName?.asString() == wsConsumerAnnotationShortName
+						if (!isImplementingInterface(psiClass, getWebserviceConsumerFqn(project)))
+							return false
+
+						// Run interface-specific validations
+						runInterfaceSpecificValidations(project, psiClass, wsConsumerAnnotation, holder)
+
+						// Run shared URL parameter validations
+						val urlAttrValue = wsConsumerAnnotation.findAttributeValue("url")
+						val urlValue = if (urlAttrValue is PsiLiteralExpression && urlAttrValue.value is String)
+							urlAttrValue.value as String else null
+						val urlParams = extractUrlParameters(urlValue)
+						validateUrlParamsAgainstSetters(project, urlParams, urlAttrValue, psiClass.methods, wsConsumerAnnotation, holder)
 					}
-					if (!hasWSConsumer) return
-
-					// Use light class only when necessary for inheritance checks and method processing
-					val psiClass = classOrObject.toLightClass() ?: return
-
-					// Verify inheritance using light class (needed for InheritanceUtil)
-					if (!isImplementingInterface(psiClass, getWebserviceConsumerFqn(project))) return
-
-					// Get the @WSConsumer annotation from light class for attribute extraction
-					val wsConsumerAnnotation = psiClass.getAnnotation(getWsConsumerAnnotationFqn(project)) ?: return
-
-					// Run interface-specific validations
-					runInterfaceSpecificValidations(project, psiClass, wsConsumerAnnotation, holder)
-
-					// Run shared URL parameter validations
-					val urlAttrValue = wsConsumerAnnotation.findAttributeValue("url")
-					val urlValue = if (urlAttrValue is PsiLiteralExpression && urlAttrValue.value is String) urlAttrValue.value as String else null
-					val urlParams = extractUrlParameters(urlValue) // Use shared helper
-					validateUrlParamsAgainstSetters(project, urlParams, urlAttrValue, psiClass.methods, wsConsumerAnnotation, holder) // Use shared logic
+					return false // Don't visit children, we handle everything here
 				}
-			}
-		}
+			},
+			arrayOf(UClass::class.java)
+		)
 	}
 }

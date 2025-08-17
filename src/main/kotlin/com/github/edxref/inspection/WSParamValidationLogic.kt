@@ -27,6 +27,82 @@ private fun logIfEnabled(project: Project, logger: Logger, message: String) {
 /**
  * Extracts parameter names (like "userId") from placeholders like "@userId" in a URL.
  */
+/*internal fun extractUrlParameters(url: String?): Set<String> {
+	if (url.isNullOrBlank()) return emptySet()
+	val params = mutableSetOf<String>()
+	val pattern = Pattern.compile("@(\\w+)")
+	val matcher = pattern.matcher(url)
+	while (matcher.find()) {
+		params.add(matcher.group(1))
+	}
+	return params
+}*/
+
+/**
+ * Gets the effective parameter name from a setter method using configurable FQN.
+ */
+/*internal fun getEffectiveParamName(method: PsiMethod): String? {
+	if (!method.name.startsWith("set") || method.parameterList.parametersCount != 1) return null
+	val project = method.project
+	val wsParamAnnotation = method.getAnnotation(getWsParamFqn(project))
+	if (wsParamAnnotation != null) {
+		val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
+		val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
+			nameAttrValue.value as String
+		} else {
+			null
+		}
+		if (!explicitName.isNullOrBlank()) return explicitName
+	}
+	if (method.name.length > 3) {
+		return method.name.substring(3).replaceFirstChar { it.lowercaseChar() }
+	}
+	return null
+}*/
+
+/**
+ * Gets the effective parameter name from a Kotlin setter function using configurable FQN.
+ * K2-compatible version that works with KtNamedFunction directly.
+ */
+//internal fun getEffectiveParamName(function: KtNamedFunction): String? {
+//	if (!function.name?.startsWith("set")!! || function.valueParameters.size != 1) return null
+//
+//	val project = function.project
+//	val wsParamFqn = getWsParamFqn(project)
+//	val wsParamShortName = wsParamFqn.substringAfterLast('.')
+//
+//	// Check for @WSParam annotation on the Kotlin function
+//	val wsParamAnnotation = function.annotationEntries.find {
+//		it.shortName?.asString() == wsParamShortName
+//	}
+//
+//	if (wsParamAnnotation != null) {
+//		val nameArg = wsParamAnnotation.valueArguments.find {
+//			it.getArgumentName()?.asName?.asString() == "name"
+//		}
+//		val expr = nameArg?.getArgumentExpression()
+//		if (expr is KtStringTemplateExpression) {
+//			val text = expr.text
+//			if (text.length > 2 && text.startsWith("\"") && text.endsWith("\"")) {
+//				val explicitName = text.substring(1, text.length - 1)
+//				if (explicitName.isNotBlank()) return explicitName
+//			}
+//		}
+//	}
+//
+//	// Derive from function name
+//	val functionName = function.name ?: return null
+//	if (functionName.length > 3) {
+//		return functionName.substring(3).replaceFirstChar { it.lowercaseChar() }
+//	}
+//	return null
+//}
+
+
+// --- Shared Helper Functions ---
+/**
+ * Extracts parameter names (like "userId") from placeholders like "@userId" in a URL.
+ */
 internal fun extractUrlParameters(url: String?): Set<String> {
 	if (url.isNullOrBlank()) return emptySet()
 	val params = mutableSetOf<String>()
@@ -44,14 +120,9 @@ internal fun extractUrlParameters(url: String?): Set<String> {
 internal fun getEffectiveParamName(method: PsiMethod): String? {
 	if (!method.name.startsWith("set") || method.parameterList.parametersCount != 1) return null
 	val project = method.project
-	val wsParamAnnotation = method.getAnnotation(getWsParamFqn(project))
+	val wsParamAnnotation = method.getAnnotation(InspectionUtil.getWsParamFqn(project))
 	if (wsParamAnnotation != null) {
-		val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
-		val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
-			nameAttrValue.value as String
-		} else {
-			null
-		}
+		val explicitName = InspectionUtil.getAnnotationStringAttribute(wsParamAnnotation, "name")
 		if (!explicitName.isNullOrBlank()) return explicitName
 	}
 	if (method.name.length > 3) {
@@ -68,26 +139,14 @@ internal fun getEffectiveParamName(function: KtNamedFunction): String? {
 	if (!function.name?.startsWith("set")!! || function.valueParameters.size != 1) return null
 
 	val project = function.project
-	val wsParamFqn = getWsParamFqn(project)
-	val wsParamShortName = wsParamFqn.substringAfterLast('.')
+	val wsParamShortName = InspectionUtil.getShortName(InspectionUtil.getWsParamFqn(project))
 
 	// Check for @WSParam annotation on the Kotlin function
-	val wsParamAnnotation = function.annotationEntries.find {
-		it.shortName?.asString() == wsParamShortName
-	}
+	val wsParamAnnotation = InspectionUtil.findKotlinFunctionAnnotation(function, wsParamShortName)
 
 	if (wsParamAnnotation != null) {
-		val nameArg = wsParamAnnotation.valueArguments.find {
-			it.getArgumentName()?.asName?.asString() == "name"
-		}
-		val expr = nameArg?.getArgumentExpression()
-		if (expr is KtStringTemplateExpression) {
-			val text = expr.text
-			if (text.length > 2 && text.startsWith("\"") && text.endsWith("\"")) {
-				val explicitName = text.substring(1, text.length - 1)
-				if (explicitName.isNotBlank()) return explicitName
-			}
-		}
+		val explicitName = InspectionUtil.getKotlinAnnotationStringAttribute(wsParamAnnotation, "name")
+		if (!explicitName.isNullOrBlank()) return explicitName
 	}
 
 	// Derive from function name
@@ -118,15 +177,15 @@ interface WSParamValidationLogic {
 		log: Logger
 	) {
 		if (urlParams.isEmpty()) {
-			logIfEnabled(project, log, "Skipping URL parameter validation as none were found.")
+			InspectionUtil.logIfEnabled(project, log, "Skipping URL parameter validation as none were found.")
 			return
 		}
 
 		// 1. Process both Java methods and Kotlin functions
 		val methodParamMap = mutableMapOf<String, MutableList<Any>>() // Any = PsiMethod or KtNamedFunction
 		val methodsWithExplicitWsParamName = mutableMapOf<Any, String>()
-		val wsParamFqn = getWsParamFqn(project)
-		val wsParamShortName = wsParamFqn.substringAfterLast('.')
+		val wsParamFqn = InspectionUtil.getWsParamFqn(project)
+		val wsParamShortName = InspectionUtil.getShortName(wsParamFqn)
 
 		// Process Java methods
 		for (method in methods) {
@@ -135,10 +194,7 @@ interface WSParamValidationLogic {
 
 			val wsParamAnnotation = method.getAnnotation(wsParamFqn)
 			if (wsParamAnnotation != null) {
-				val nameAttrValue = wsParamAnnotation.findAttributeValue("name")
-				val explicitName = if (nameAttrValue is PsiLiteralExpression && nameAttrValue.value is String) {
-					nameAttrValue.value as String
-				} else null
+				val explicitName = InspectionUtil.getAnnotationStringAttribute(wsParamAnnotation, "name")
 				if (!explicitName.isNullOrBlank()) {
 					methodsWithExplicitWsParamName[method] = explicitName
 				}
@@ -150,34 +206,23 @@ interface WSParamValidationLogic {
 			val effectiveName = getEffectiveParamName(function) ?: continue
 			methodParamMap.computeIfAbsent(effectiveName) { mutableListOf() }.add(function)
 
-			val wsParamAnnotation = function.annotationEntries.find {
-				it.shortName?.asString() == wsParamShortName
-			}
+			val wsParamAnnotation = InspectionUtil.findKotlinFunctionAnnotation(function, wsParamShortName)
 			if (wsParamAnnotation != null) {
-				val nameArg = wsParamAnnotation.valueArguments.find {
-					it.getArgumentName()?.asName?.asString() == "name"
-				}
-				val expr = nameArg?.getArgumentExpression()
-				if (expr is KtStringTemplateExpression) {
-					val text = expr.text
-					if (text.length > 2 && text.startsWith("\"") && text.endsWith("\"")) {
-						val explicitName = text.substring(1, text.length - 1)
-						if (explicitName.isNotBlank()) {
-							methodsWithExplicitWsParamName[function] = explicitName
-						}
-					}
+				val explicitName = InspectionUtil.getKotlinAnnotationStringAttribute(wsParamAnnotation, "name")
+				if (!explicitName.isNullOrBlank()) {
+					methodsWithExplicitWsParamName[function] = explicitName
 				}
 			}
 		}
 
-		logIfEnabled(project, log, "Effective Method Params found: ${methodParamMap.keys}")
+		InspectionUtil.logIfEnabled(project, log, "Effective Method Params found: ${methodParamMap.keys}")
 
 		// 2. Rule: Check if all URL params have a corresponding setter
 		val foundMethodParams = methodParamMap.keys
 		val missingParams = urlParams - foundMethodParams
 		if (missingParams.isNotEmpty()) {
 			missingParams.forEach { missingParam ->
-				logIfEnabled(project, log, "ERROR: Missing setter for URL param '@$missingParam'")
+				InspectionUtil.logIfEnabled(project, log, "ERROR: Missing setter for URL param '@$missingParam'")
 				val highlightElement = urlAttrValue ?: wsConsumerAnnotation.nameReferenceElement ?: wsConsumerAnnotation
 				holder.registerProblem(
 					highlightElement,
@@ -236,7 +281,7 @@ private fun validateMethodRules(
 	// Rule: Check for setter name mismatch (WARN)
 	val derivedFromName = method.name.substring(3).replaceFirstChar { it.lowercaseChar() }
 	if (effectiveParamName != derivedFromName && method in methodsWithExplicitWsParamName) {
-		logIfEnabled(project, log, "WARN: Setter name '${method.name}' differs from effective param '$effectiveParamName' defined by @WSParam.")
+		InspectionUtil.logIfEnabled(project, log, "WARN: Setter name '${method.name}' differs from effective param '$effectiveParamName' defined by @WSParam.")
 		holder.registerProblem(
 			method.nameIdentifier ?: method,
 			MyBundle.message("inspection.wsparam.warn.setter.name.mismatch", method.name, effectiveParamName),
@@ -247,7 +292,7 @@ private fun validateMethodRules(
 	// Rule: Check if explicit @WSParam name matches a URL param (ERROR)
 	val explicitWsParamName = methodsWithExplicitWsParamName[method]
 	if (explicitWsParamName != null && explicitWsParamName !in urlParams) {
-		logIfEnabled(project, log, "ERROR: Explicit @WSParam name '$explicitWsParamName' not in URL params $urlParams")
+		InspectionUtil.logIfEnabled(project, log, "ERROR: Explicit @WSParam name '$explicitWsParamName' not in URL params $urlParams")
 		val wsParamNameValueElement = method.getAnnotation(wsParamFqn)?.findAttributeValue("name")
 		holder.registerProblem(
 			wsParamNameValueElement ?: method.getAnnotation(wsParamFqn) ?: method.nameIdentifier ?: method,
@@ -271,7 +316,7 @@ private fun validateKotlinFunctionRules(
 	val functionName = function.name ?: return
 	val derivedFromName = functionName.substring(3).replaceFirstChar { it.lowercaseChar() }
 	if (effectiveParamName != derivedFromName && function in methodsWithExplicitWsParamName) {
-		logIfEnabled(project, log, "WARN: Kotlin setter name '$functionName' differs from effective param '$effectiveParamName' defined by @WSParam.")
+		InspectionUtil.logIfEnabled(project, log, "WARN: Kotlin setter name '$functionName' differs from effective param '$effectiveParamName' defined by @WSParam.")
 		holder.registerProblem(
 			function.nameIdentifier ?: function,
 			MyBundle.message("inspection.wsparam.warn.setter.name.mismatch", functionName, effectiveParamName),
@@ -282,10 +327,8 @@ private fun validateKotlinFunctionRules(
 	// Rule: Check if explicit @WSParam name matches a URL param (ERROR)
 	val explicitWsParamName = methodsWithExplicitWsParamName[function]
 	if (explicitWsParamName != null && explicitWsParamName !in urlParams) {
-		logIfEnabled(project, log, "ERROR: Explicit Kotlin @WSParam name '$explicitWsParamName' not in URL params $urlParams")
-		val wsParamAnnotation = function.annotationEntries.find {
-			it.shortName?.asString() == wsParamShortName
-		}
+		InspectionUtil.logIfEnabled(project, log, "ERROR: Explicit Kotlin @WSParam name '$explicitWsParamName' not in URL params $urlParams")
+		val wsParamAnnotation = InspectionUtil.findKotlinFunctionAnnotation(function, wsParamShortName)
 		val nameArg = wsParamAnnotation?.valueArguments?.find {
 			it.getArgumentName()?.asName?.asString() == "name"
 		}

@@ -8,10 +8,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.util.InheritanceUtil
-import org.jetbrains.annotations.Nls
-import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.asJava.toLightClass
-import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 
@@ -135,7 +132,8 @@ class InternalApiJavaInspection : AbstractBaseJavaLocalInspectionTool(), Interna
 }
 
 // --- Kotlin Inspection ---
-class InternalApiKotlinInspection : AbstractKotlinInspection(), InternalApiInspectionLogic {
+class InternalApiKotlinInspection : AbstractBaseUastLocalInspectionTool
+	(), InternalApiInspectionLogic {
 	override val log = logger<InternalApiKotlinInspection>()
 	override fun getDisplayName(): String = MyBundle.message("inspection.internalapi.displayname")
 

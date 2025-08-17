@@ -1,80 +1,14 @@
 package com.github.edxref.inspection
 
 import com.github.edxref.MyBundle
-import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 import com.intellij.codeInspection.*
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
-import com.intellij.psi.util.InheritanceUtil
-import org.jetbrains.kotlin.analysis.api.analyze
-import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool
-import com.intellij.codeInspection.ProblemsHolder
-import com.intellij.psi.PsiElementVisitor
 import org.jetbrains.kotlin.asJava.toLightClass
-import org.jetbrains.kotlin.asJava.toLightMethods
-import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
-import org.jetbrains.kotlin.psi.KtVisitorVoid
-import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
-
-
-// --- Reusable Utilities (Copied or move to Util) ---
-private fun getSettings(project: Project) = project.getWSConsumerSettings()
-private fun getWsConsumerAnnotationFqn(project: Project) = getSettings(project).wsConsumerAnnotationFqn.ifBlank { "com.github.edxref.annotations.WSConsumer" }
-private fun getWebserviceConsumerFqn(project: Project) = getSettings(project).webserviceConsumerFqn.ifBlank { "com.github.edxref.annotations.WebserviceConsumer" }
-private fun getPearlWebserviceConsumerFqn(project: Project) = getSettings(project).pearlWebserviceConsumerFqn.ifBlank { "com.github.edxref.annotations.PearlWebserviceConsumer" }
-private fun getWsHeaderFqn(project: Project) = getSettings(project).wsHeaderAnnotationFqn.ifBlank { "com.github.edxref.annotations.WSHeader" }
-private fun getWsHeadersFqn(project: Project) = getSettings(project).wsHeadersAnnotationFqn.ifBlank { "com.github.edxref.annotations.WSHeaders" }
-private fun logIfEnabled(project: Project, logger: Logger, message: String) {
-	try {
-		if (getSettings(project).enableLog) logger.info(message)
-	} catch (e: Exception) { /* ignore */
-	}
-}
-
-private fun isWebserviceConsumer(psiClass: PsiClass): Boolean {
-	val project = psiClass.project
-	val wsConsumerFqn = getWebserviceConsumerFqn(project)
-	val pearlConsumerFqn = getPearlWebserviceConsumerFqn(project)
-	return (wsConsumerFqn.isNotBlank() && InheritanceUtil.isInheritor(psiClass, wsConsumerFqn)) ||
-			(pearlConsumerFqn.isNotBlank() && InheritanceUtil.isInheritor(psiClass, pearlConsumerFqn))
-}
-
-private fun getAnnotationStringAttribute(annotation: PsiAnnotation, attributeName: String): String? {
-	val attrValue = annotation.findAttributeValue(attributeName)
-	return if (attrValue is PsiLiteralExpression && attrValue.value is String) attrValue.value as String else null
-}
-
-// Helper to get type headers (needed for redundancy check)
-private fun getTypeHeadersMap(psiClass: PsiClass, project: Project): Map<String, PsiAnnotation> {
-	val headersMap = mutableMapOf<String, PsiAnnotation>()
-	val wsHeaderFqn = getWsHeaderFqn(project)
-	val wsHeadersFqn = getWsHeadersFqn(project)
-	val headersAnnotation = psiClass.getAnnotation(wsHeadersFqn)
-	if (headersAnnotation != null) {
-		val valueAttr = headersAnnotation.findAttributeValue("value")
-		if (valueAttr is PsiArrayInitializerMemberValue) {
-			valueAttr.initializers.forEach { initializer ->
-				if (initializer is PsiAnnotation && initializer.hasQualifiedName(wsHeaderFqn)) {
-					getAnnotationStringAttribute(initializer, "name")?.let { name ->
-						if (name.isNotBlank()) headersMap[name] = initializer
-					}
-				}
-			}
-		}
-	}
-	val singleHeaderAnnotation = psiClass.getAnnotation(wsHeaderFqn)
-	if (singleHeaderAnnotation != null) {
-		getAnnotationStringAttribute(singleHeaderAnnotation, "name")?.let { name ->
-			if (name.isNotBlank() && !headersMap.containsKey(name)) headersMap[name] = singleHeaderAnnotation
-		}
-	}
-	return headersMap
-}
-// --- End Reusable Utilities ---
-
 
 // --- Inspection Logic for Method Headers ---
 interface WSHeaderOnMethodInspectionLogic {
@@ -87,17 +21,17 @@ interface WSHeaderOnMethodInspectionLogic {
 	) {
 		// 1. Prerequisites for the containing class
 		val containingClass = method.containingClass ?: return
-		containingClass.getAnnotation(getWsConsumerAnnotationFqn(project)) ?: return
-		if (!isWebserviceConsumer(containingClass)) return
+		containingClass.getAnnotation(InspectionUtil.getWsConsumerAnnotationFqn(project)) ?: return
+		if (!InspectionUtil.isWebserviceConsumer(containingClass)) return
 
-		logIfEnabled(project, log, "Running WSHeaderOnMethod validation on ${containingClass.name}.${method.name}")
+		InspectionUtil.logIfEnabled(project, log, "Running WSHeaderOnMethod validation on ${containingClass.name}.${method.name}")
 
 		// 2. Get headers on the current method
-		val methodHeaders = getMethodHeaders(method, project) // Use existing helper
+		val methodHeaders = getMethodHeaders(method, project)
 		if (methodHeaders.isEmpty()) return // Nothing to validate on this method
 
 		// 3. Get type headers for redundancy check
-		val typeHeaders = getTypeHeadersMap(containingClass, project) // Use helper
+		val typeHeaders = getTypeHeadersMap(containingClass, project)
 
 		// 4. Validate each header on the method
 		val isSetter = method.name.startsWith("set") && method.parameterList.parametersCount == 1
@@ -110,7 +44,7 @@ interface WSHeaderOnMethodInspectionLogic {
 
 			// Rule 2: Check for redundancy against type headers
 			if (typeHeaders.containsKey(methodHeaderName)) {
-				logIfEnabled(project, log, "WARN: Redundant header '$methodHeaderName' on method '${method.name}' also defined on type '${containingClass.name}'")
+				InspectionUtil.logIfEnabled(project, log, "WARN: Redundant header '$methodHeaderName' on method '${method.name}' also defined on type '${containingClass.name}'")
 				holder.registerProblem(
 					method.nameIdentifier ?: method,
 					MyBundle.message("inspection.wsheaderonmethod.warn.redundant.method.header", methodHeaderName),
@@ -120,9 +54,51 @@ interface WSHeaderOnMethodInspectionLogic {
 		}
 	}
 
+	// K2-compatible validation for Kotlin methods
+	fun validateKotlinMethodHeader(
+		project: Project,
+		function: KtNamedFunction,
+		holder: ProblemsHolder
+	) {
+		// 1. Prerequisites for the containing class
+		val containingClass = function.containingClassOrObject as? KtClassOrObject ?: return
+		if (!InspectionUtil.hasWSConsumerAnnotation(project, containingClass)) return
+		if (!InspectionUtil.isKotlinWebserviceConsumer(containingClass)) return
+
+		InspectionUtil.logIfEnabled(project, log, "Running WSHeaderOnMethod validation on Kotlin ${containingClass.name}.${function.name}")
+
+		// 2. Get headers on the current function
+		val functionHeaders = getKotlinFunctionHeaders(function, project)
+		if (functionHeaders.isEmpty()) return // Nothing to validate on this function
+
+		// 3. Get type headers for redundancy check (convert to light class for this)
+		val lightClass = containingClass.toLightClass() ?: return
+		val typeHeaders = getTypeHeadersMap(lightClass, project)
+
+		// 4. Validate each header on the function
+		val isSetter = function.name?.startsWith("set") == true && function.valueParameters.size == 1
+
+		functionHeaders.forEach { (methodHeaderName, methodHeaderAnnotation) ->
+			// Rule 1: Validate defaultValue on setters
+			if (isSetter) {
+				validateKotlinSetterHeaderDefault(function, methodHeaderName, methodHeaderAnnotation, holder, log)
+			}
+
+			// Rule 2: Check for redundancy against type headers
+			if (typeHeaders.containsKey(methodHeaderName)) {
+				InspectionUtil.logIfEnabled(project, log, "WARN: Redundant header '$methodHeaderName' on Kotlin function '${function.name}' also defined on type '${containingClass.name}'")
+				holder.registerProblem(
+					function.nameIdentifier ?: function,
+					MyBundle.message("inspection.wsheaderonmethod.warn.redundant.method.header", methodHeaderName),
+					ProblemHighlightType.WARNING
+				)
+			}
+		}
+	}
+
 	/**
 	 * Validates that if a defaultValue attribute exists on a @WSHeader on a setter method,
-	 * it must be non-empty. (Copied from previous logic)
+	 * it must be non-empty.
 	 */
 	private fun validateSetterHeaderDefault(
 		method: PsiMethod,
@@ -135,34 +111,93 @@ interface WSHeaderOnMethodInspectionLogic {
 		if (defaultValueAttr is PsiLiteralExpression) {
 			val value = defaultValueAttr.value as? String
 			if (value != null && value.isEmpty()) {
-				logIfEnabled(method.project, logger, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty defaultValue.")
+				InspectionUtil.logIfEnabled(method.project, logger, "ERROR: Setter header '$headerName' on method '${method.name}' has an empty defaultValue.")
 				holder.registerProblem(
 					method.nameIdentifier ?: method,
 					MyBundle.message("inspection.wsheaderonmethod.error.invalid.setter.defaultvalue", headerName, method.name),
 					ProblemHighlightType.ERROR
 				)
-				val classOrInterface = method.containingClass
-				val classElementToHighlight = classOrInterface?.nameIdentifier ?: classOrInterface
-				if (classElementToHighlight != null) {
-					holder.registerProblem(
-						classElementToHighlight,
-						MyBundle.message("inspection.wsheaderonmethod.error.invalid.setter.defaultvalue", headerName, method.name),
-						ProblemHighlightType.ERROR
-					)
+			}
+		}
+	}
+
+	/**
+	 * K2-compatible validation for Kotlin setter headers
+	 */
+	private fun validateKotlinSetterHeaderDefault(
+		function: KtNamedFunction,
+		headerName: String,
+		headerAnnotation: KtAnnotationEntry,
+		holder: ProblemsHolder,
+		logger: Logger
+	) {
+		val defaultValueArg = headerAnnotation.valueArguments.find {
+			it.getArgumentName()?.asName?.asString() == "defaultValue"
+		}
+
+		val expr = defaultValueArg?.getArgumentExpression()
+		if (expr is KtStringTemplateExpression) {
+			val text = expr.text
+			if (text.length == 2 || (text.startsWith("\"") && text.endsWith("\"") && text.substring(1, text.length - 1).isEmpty())) {
+				InspectionUtil.logIfEnabled(function.project, logger, "ERROR: Kotlin setter header '$headerName' on function '${function.name}' has an empty defaultValue.")
+				holder.registerProblem(
+					function.nameIdentifier ?: function,
+					MyBundle.message("inspection.wsheaderonmethod.error.invalid.setter.defaultvalue", headerName, function.name ?: "unknown"),
+					ProblemHighlightType.ERROR
+				)
+			}
+		}
+	}
+
+	// Helper to get method headers
+	private fun getMethodHeaders(method: PsiMethod, project: Project): Map<String, PsiAnnotation> {
+		val headersMap = mutableMapOf<String, PsiAnnotation>()
+		val wsHeaderFqn = InspectionUtil.getWsHeaderFqn(project)
+		method.annotations.filter { it.hasQualifiedName(wsHeaderFqn) }.forEach { headerAnnotation ->
+			InspectionUtil.getAnnotationStringAttribute(headerAnnotation, "name")?.let { name ->
+				if (name.isNotBlank()) headersMap[name] = headerAnnotation
+			}
+		}
+		return headersMap
+	}
+
+	// Helper to get Kotlin function headers
+	private fun getKotlinFunctionHeaders(function: KtNamedFunction, project: Project): Map<String, KtAnnotationEntry> {
+		val headersMap = mutableMapOf<String, KtAnnotationEntry>()
+		val wsHeaderShortName = InspectionUtil.getShortName(InspectionUtil.getWsHeaderFqn(project))
+
+		function.annotationEntries.filter { it.shortName?.asString() == wsHeaderShortName }.forEach { headerAnnotation ->
+			InspectionUtil.getKotlinAnnotationStringAttribute(headerAnnotation, "name")?.let { name ->
+				if (name.isNotBlank()) headersMap[name] = headerAnnotation
+			}
+		}
+		return headersMap
+	}
+
+	// Helper to get type headers (for redundancy check)
+	private fun getTypeHeadersMap(psiClass: PsiClass, project: Project): Map<String, PsiAnnotation> {
+		val headersMap = mutableMapOf<String, PsiAnnotation>()
+		val wsHeaderFqn = InspectionUtil.getWsHeaderFqn(project)
+		val wsHeadersFqn = InspectionUtil.getWsHeadersFqn(project)
+
+		val headersAnnotation = psiClass.getAnnotation(wsHeadersFqn)
+		if (headersAnnotation != null) {
+			val valueAttr = headersAnnotation.findAttributeValue("value")
+			if (valueAttr is PsiArrayInitializerMemberValue) {
+				valueAttr.initializers.forEach { initializer ->
+					if (initializer is PsiAnnotation && initializer.hasQualifiedName(wsHeaderFqn)) {
+						InspectionUtil.getAnnotationStringAttribute(initializer, "name")?.let { name ->
+							if (name.isNotBlank()) headersMap[name] = initializer
+						}
+					}
 				}
 			}
 		}
-		// If it's a reference (PsiReferenceExpression), or not present, do nothing (no error)
-	}
 
-
-	// Helper to get method headers (copied from previous logic)
-	private fun getMethodHeaders(method: PsiMethod, project: Project): Map<String, PsiAnnotation> {
-		val headersMap = mutableMapOf<String, PsiAnnotation>()
-		val wsHeaderFqn = getWsHeaderFqn(project)
-		method.annotations.filter { it.hasQualifiedName(wsHeaderFqn) }.forEach { headerAnnotation ->
-			getAnnotationStringAttribute(headerAnnotation, "name")?.let { name ->
-				if (name.isNotBlank()) headersMap[name] = headerAnnotation
+		val singleHeaderAnnotation = psiClass.getAnnotation(wsHeaderFqn)
+		if (singleHeaderAnnotation != null) {
+			InspectionUtil.getAnnotationStringAttribute(singleHeaderAnnotation, "name")?.let { name ->
+				if (name.isNotBlank() && !headersMap.containsKey(name)) headersMap[name] = singleHeaderAnnotation
 			}
 		}
 		return headersMap
@@ -176,42 +211,25 @@ class WSHeaderOnMethodJavaInspection : AbstractBaseJavaLocalInspectionTool(), WS
 
 	override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
 		return object : JavaElementVisitor() {
-			override fun visitMethod(method: PsiMethod) { // Visit methods directly
+			override fun visitMethod(method: PsiMethod) {
 				super.visitMethod(method)
-				validateMethodHeader(method.project, method, holder) // Call specific logic
+				validateMethodHeader(method.project, method, holder)
 			}
 		}
 	}
 }
 
 // --- Kotlin Inspection ---
-// ... existing code ...
-class WSHeaderOnMethodKotlinInspection : AbstractKotlinInspection(), WSHeaderOnMethodInspectionLogic {
+class WSHeaderOnMethodKotlinInspection : AbstractBaseUastLocalInspectionTool(), WSHeaderOnMethodInspectionLogic {
 	override val log = logger<WSHeaderOnMethodKotlinInspection>()
 	override fun getDisplayName(): String = MyBundle.message("inspection.wsheaderonmethod.displayname")
 
 	override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
 		return object : KtVisitorVoid() {
-				override fun visitNamedFunction(function: KtNamedFunction) {
-					super.visitNamedFunction(function)
-
-					val containingClassOrObject = function.containingClassOrObject
-					val containingLightClass = containingClassOrObject?.toLightClass()
-
-					if (containingLightClass != null) {
-						// Find the corresponding PsiMethod in the light class
-						val psiMethod = containingLightClass.findMethodsByName(function.name ?: "", false)
-							.firstOrNull { it.parameterList.parametersCount == function.valueParameters.size }
-
-						if (psiMethod != null) {
-							validateMethodHeader(function.project, psiMethod, holder)
-						} else {
-							logIfEnabled(function.project, log, "Could not find matching PsiMethod for Kotlin function ${function.name}")
-						}
-					} else {
-						logIfEnabled(function.project, log, "Could not get LightClass for containing element of ${function.name}")
-					}
-				}
+			override fun visitNamedFunction(function: KtNamedFunction) {
+				super.visitNamedFunction(function)
+				validateKotlinMethodHeader(function.project, function, holder)
+			}
 		}
 	}
 }

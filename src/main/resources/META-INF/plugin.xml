@@ -108,7 +108,8 @@
                          groupName="Custom Validations"
                          enabledByDefault="true"
                          level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSHeadersOnTypeInspectionLogic$WSHeadersOnTypeKotlinInspection"/>
+                         implementationClass="com.github.edxref.inspection.WSHeadersOnTypeKotlinInspection
+"/>
 
         <!-- NEW: Register WSHeaderOnMethodInspection -->
         <localInspection language="JAVA"
@@ -124,7 +125,8 @@
                          groupName="Custom Validations"
                          enabledByDefault="true"
                          level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSHeaderOnMethodKotlinInspection"/>
+                         implementationClass="com.github.edxref.inspection.WSHeaderOnMethodKotlinInspection
+"/>
         <localInspection language="JAVA"
                          shortName="InternalApiValidationJava"
                          displayName="Internal API Usage Validation (@InternalApi)"

@@ -15,7 +15,6 @@ import com.intellij.psi.*
 import com.intellij.psi.codeStyle.JavaCodeStyleManager
 import com.intellij.psi.util.InheritanceUtil
 import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 
@@ -367,7 +366,8 @@ class WSConsumerJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSConsum
 }
 
 // --- Kotlin Implementation ---
-class WSConsumerKotlinInspection : AbstractKotlinInspection(), WSConsumerInspectionLogic {
+class WSConsumerKotlinInspection : AbstractBaseUastLocalInspectionTool
+	(), WSConsumerInspectionLogic {
 	// No need to override log here, interface provides default
 
 	override fun getDisplayName(): String = "WSConsumer Annotation Validation (Kotlin)" // More specific display name

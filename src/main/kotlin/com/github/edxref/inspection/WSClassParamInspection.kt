@@ -8,9 +8,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.util.InheritanceUtil
-import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.asJava.toLightClass
-import org.jetbrains.kotlin.idea.codeinsight.api.classic.inspections.AbstractKotlinInspection
 import org.jetbrains.kotlin.psi.*
 
 // --- Settings Accessors (Copied or move to Util) ---
@@ -86,7 +84,8 @@ class WSClassParamJavaInspection : AbstractBaseJavaLocalInspectionTool(), WSClas
 }
 
 // --- Kotlin Inspection ---
-class WSClassParamKotlinInspection : AbstractKotlinInspection(), WSClassParamInspectionLogic {
+class WSClassParamKotlinInspection : AbstractBaseUastLocalInspectionTool
+	(), WSClassParamInspectionLogic {
 	override val log = logger<WSClassParamKotlinInspection>()
 	override fun getDisplayName(): String = MyBundle.message("inspection.wsclassparam.displayname")
 
