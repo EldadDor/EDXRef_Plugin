@@ -215,15 +215,35 @@ class WSInterfaceParamKotlinInspection : AbstractBaseUastLocalInspectionTool(), 
 						// Run interface-specific validations
 						runInterfaceSpecificValidations(project, psiClass, wsConsumerAnnotation, holder)
 
-						// Run shared URL parameter validations
+						// Run shared URL parameter validations with correct signature
 						val urlAttrValue = wsConsumerAnnotation.findAttributeValue("url")
 						val urlValue = if (urlAttrValue is PsiLiteralExpression && urlAttrValue.value is String)
 							urlAttrValue.value as String else null
 						val urlParams = extractUrlParameters(urlValue)
-						validateUrlParamsAgainstSetters(project, urlParams, urlAttrValue, psiClass.methods, wsConsumerAnnotation, holder)
+
+						// Get Kotlin functions from the interface
+						val kotlinFunctions = if (sourcePsi is KtClass) {
+							sourcePsi.declarations.filterIsInstance<KtNamedFunction>()
+						} else {
+							emptyList()
+						}
+
+						// Call with the correct signature including log parameter
+						validateUrlParamsAgainstSetters(
+							project = project,
+							urlParams = urlParams,
+							urlAttrValue = urlAttrValue,
+							methods = psiClass.methods,
+							kotlinFunctions = kotlinFunctions,
+							wsConsumerAnnotation = wsConsumerAnnotation,
+							holder = holder,
+							log = log  // Add the missing log parameter
+						)
 					}
-					return false // Don't visit children, we handle everything here
+					return false
 				}
+
+
 			},
 			arrayOf(UClass::class.java)
 		)
