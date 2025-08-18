@@ -6,7 +6,7 @@
 
 
     <!-- Add version information -->
-    <version>1.1.1</version>
+    <version>1.2</version>
 
     <!-- Add IDE compatibility information -->
     <idea-version since-build="223.8836" until-build="252.*"/>
@@ -25,6 +25,10 @@
     <depends>org.jetbrains.kotlin</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
+
+    <extensions defaultExtensionNs="org.jetbrains.kotlin">
+        <supportsKotlinPluginMode supportsK2="true"/>
+    </extensions>
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="EDXRef Notifications" displayType="BALLOON" bundle="messages.MyBundle" key="notification.group.edxref.notifications"/>
@@ -76,7 +80,7 @@
                 enabledByDefault="true"
                 level="ERROR"
                 implementationClass="com.github.edxref.inspection.WSClassParamKotlinInspection"/>
-<!--         NEW: Register WSInterfaceParamInspection -->
+        <!--         NEW: Register WSInterfaceParamInspection -->
         <localInspection
                 language="JAVA"
                 shortName="WSInterfaceParamValidationJava"
@@ -101,7 +105,7 @@
                          groupName="Custom Validations"
                          enabledByDefault="true"
                          level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSHeadersOnTypeInspectionLogic$WSHeadersOnTypeJavaInspection"/>
+                         implementationClass="com.github.edxref.inspection.WSHeadersOnTypeJavaInspection"/>
         <localInspection language="kotlin"
                          shortName="WSHeadersOnTypeValidationKotlin"
                          displayName="WSConsumer Type Header Validation (@WSHeaders)"
@@ -141,7 +145,8 @@
                          enabledByDefault="true"
                          level="ERROR"
                          implementationClass="com.github.edxref.inspection.InternalApiKotlinInspection"/>
-                <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+
+        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
 
         <!-- Unified EDXRef Plugin Settings -->
         <projectConfigurable

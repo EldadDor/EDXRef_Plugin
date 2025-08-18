@@ -2,20 +2,21 @@ package com.github.edxref.inspection
 
 import com.intellij.codeInspection.InspectionManager
 import com.intellij.psi.*
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import org.junit.jupiter.*
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
+import org.junit.jupiter.api.*
+import org.junit.jupiter.api.Assertions.*
 import org.mockito.Mockito.*
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
-class WSConsumerJavaInspectionKotlin2Test : BasePlatformTestCase() {
+class WSConsumerJavaInspectionKotlin2Test : LightJavaCodeInsightFixtureTestCase() {
 
   override fun getTestDataPath(): String {
     // Specify the path to your test data directory
     return "src/test/testData"
   }
 
-  //    @Test
+  @Test
   fun testMissingUrlAndPath() {
     // Create a simplified test file
     val file =
@@ -38,13 +39,7 @@ class WSConsumerJavaInspectionKotlin2Test : BasePlatformTestCase() {
     `when`(annotation.qualifiedName).thenReturn("com.github.edxref.WSConsumer")
     `when`(annotation.findAttributeValue("url")).thenReturn(null)
     `when`(annotation.findAttributeValue("path")).thenReturn(null)
-    // Mock more attributes
-    /*whenever(annotation.findAttributeValue("method")).thenReturn(mockk<PsiElement>().apply {
-        whenever(text).thenReturn("WSMethods.GET")
-    })
-    whenever(annotation.findAttributeValue("timeout")).thenReturn(mockk<PsiElement>().apply {
-        whenever(text).thenReturn("60000")
-    })*/
+
     // Create mock PsiLiteralExpression for null values
     val nullLiteral = mock<PsiLiteralExpression>()
     whenever(nullLiteral.text).thenReturn("null")
@@ -54,12 +49,12 @@ class WSConsumerJavaInspectionKotlin2Test : BasePlatformTestCase() {
     // Run the inspection directly
     val problems = inspection.checkClass(psiClass, manager, true)
 
-    // Assert that the inspection found an issue
-    assertNotNull(problems)
-    assertTrue(problems.isNotEmpty())
+    // Assert that the inspection found an issue - Use fully qualified JUnit 5 assertions
+    assertNotNull(problems, "Problems should not be null")
+    assertTrue(problems.isNotEmpty(), "Should find problems with missing url and path")
   }
 
-  //    @Test
+  @Test
   fun testMissingUrlAndPath2() {
     // Create a real inspection instance
     val inspection = WSConsumerJavaInspection()
@@ -95,10 +90,10 @@ class WSConsumerJavaInspectionKotlin2Test : BasePlatformTestCase() {
       println("Problems: ${problems.joinToString { it.descriptionTemplate }}")
     }
 
-    // Verify the result
+    // Verify the result - Use fully qualified JUnit 5 assertions
     assertTrue(
-      "Should find problems with missing url and path, but none were found",
       problems.isNotEmpty(),
+      "Should find problems with missing url and path, but none were found",
     )
   }
 }

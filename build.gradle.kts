@@ -49,6 +49,7 @@ allprojects {
 			testFramework(TestFrameworkType.Platform)
 			testFramework(TestFrameworkType.JUnit5)
 
+
 		}
 	}
 
@@ -79,12 +80,12 @@ allprojects {
 			compilerOptions {
 				freeCompilerArgs = listOf(
 					"-Xjsr305=strict",
-					"-opt-in=kotlin.ExperimentalStdlibApi",
-					"-Xuse-k2"  // Enable K2 compiler explicitly
+					"-opt-in=kotlin.ExperimentalStdlibApi"
+//					"-Xuse-k2"  // Enable K2 compiler explicitly
 				)
 				jvmTarget.set(JvmTarget.JVM_21)
-				languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
-				apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+				languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
+				apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
 			}
 		}
 
@@ -118,24 +119,32 @@ dependencies {
 		pluginVerifier()
 		zipSigner()
 		testFramework(TestFrameworkType.Platform)
-//		testFramework(TestFrameworkType.JUnit5)
+		testFramework(TestFrameworkType.JUnit5)
 	}
 
-	// JUnit 5 dependencies
-	testImplementation(kotlin("test-junit5"))
-	testImplementation("org.junit.jupiter:junit-jupiter-api")
-	testImplementation("org.junit.jupiter:junit-jupiter-engine")
+	// JUnit 5 dependencies - use libs catalog
+	testImplementation("org.junit.jupiter:junit-jupiter-api:5.12.2")
+	testImplementation("org.junit.jupiter:junit-jupiter-params:5.12.2")
+	testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.12.2")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-	testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
 
+
+
+	// Alternative explicit dependencies if catalog doesn't work
+	// testImplementation("org.junit.jupiter:junit-jupiter-api:5.12.2")
+	// testImplementation("org.junit.jupiter:junit-jupiter-params:5.12.2")
+	// testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.12.2")
+	// testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
 	// Mockito dependencies
 	testImplementation("org.mockito:mockito-core:5.8.0")
 	testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 
-	// Add this for better JUnit 5 IntelliJ Platform integration
-//	testImplementation("com.intellij.testFramework:testFramework-junit5:1.0.0")
+	// Kotlin test support
+	testImplementation(kotlin("test"))
+	testImplementation(kotlin("test-junit5"))
 }
+
 
 
 intellijPlatform {
@@ -179,25 +188,6 @@ intellijPlatform {
 			}
 		}
 	}
-
-	/*signing {
-		val jetbrainsDir = File(System.getProperty("user.home"), ".jetbrains")
-		certificateChain.set(
-			project.provider { File(jetbrainsDir, "plugin-sign-chain.crt").readText() }
-		)
-		privateKey.set(
-			project.provider { File(jetbrainsDir, "plugin-sign-private-key.pem").readText() }
-		)
-		password.set(project.provider { properties("jetbrains.sign-plugin.password") })
-	}*/
-
-	// Commenting out publishing since you don't want to publish
-	// publishing {
-	//     token.set(project.provider { properties("jetbrains.marketplace.token") })
-	//     channels.set(
-	//         listOf(properties("pluginVersion").split('-').getOrElse(1) { "default" }.split('.').first())
-	//     )
-	// }
 
 	pluginVerification {
 		failureLevel.set(
@@ -259,8 +249,9 @@ tasks {
 		group = "build"
 		description = "Copies the jar artifact to the dist folder"
 
-		from(layout.buildDirectory.file("libs/EDXref-${properties("pluginVersion")}.jar"))
-		into(layout.projectDirectory.dir("dist"))
+		from(layout.buildDirectory.file("libs/EDXref-${properties("pluginVersion")}-base.jar"))
+
+		into(layout.projectDirectory.dir("dist")).rename { "EDXref.jar" }
 
 		dependsOn("jar")
 	}
