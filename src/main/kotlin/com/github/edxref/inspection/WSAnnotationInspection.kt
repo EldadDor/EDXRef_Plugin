@@ -159,7 +159,7 @@ private fun findHighlightElementForAttribute(
 
 // --- Main Inspection Logic Interface ---
 interface WSConsumerInspectionLogic {
-  private val log: Logger // Use private val for logger within the interface scope
+  val log: Logger // Use private val for logger within the interface scope
     get() = logger<WSConsumerInspectionLogic>() // Default logger instance
 
   fun checkWSConsumerAnnotation(

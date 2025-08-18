@@ -48,6 +48,7 @@ allprojects {
 
 			testFramework(TestFrameworkType.Platform)
 			testFramework(TestFrameworkType.JUnit5)
+
 		}
 	}
 
@@ -68,6 +69,9 @@ allprojects {
 		exclude(group = "org.slf4j", module = "slf4j-simple")
 		exclude(group = "org.slf4j", module = "slf4j-log4j12")
 		exclude(group = "org.slf4j", module = "slf4j-jdk14")
+		exclude(group = "junit", module = "junit") // Exclude JUnit 4
+		exclude(group = "org.junit.vintage", module = "junit-vintage-engine")
+
 	}
 
 	tasks {
@@ -89,6 +93,18 @@ allprojects {
 			systemProperty("java.awt.headless", "false")
 			systemProperty("ide.allow.document.model.changes.in.highlighting", "true")
 			systemProperty("kotlin.script.disable.auto.import", "true")
+			systemProperty("idea.kotlin.plugin.use.k2", "true") // Add K2 for tests
+			systemProperty("idea.force.use.core.classloader.for.plugin.path", "true")
+
+			// JVM arguments for better K2 test compatibility
+			jvmArgs(
+				"--add-opens", "java.base/java.lang=ALL-UNNAMED",
+				"--add-opens", "java.base/java.util=ALL-UNNAMED",
+				"--add-opens", "java.desktop/java.awt=ALL-UNNAMED",
+				"--add-opens", "java.base/java.io=ALL-UNNAMED"
+			)
+
+
 		}
 
 		named("check") {
@@ -101,14 +117,26 @@ dependencies {
 	intellijPlatform {
 		pluginVerifier()
 		zipSigner()
-		instrumentationTools()
+		testFramework(TestFrameworkType.Platform)
+//		testFramework(TestFrameworkType.JUnit5)
 	}
 
-	// Test dependencies from your old version
-	testImplementation(kotlin("test"))
+	// JUnit 5 dependencies
+	testImplementation(kotlin("test-junit5"))
+	testImplementation("org.junit.jupiter:junit-jupiter-api")
+	testImplementation("org.junit.jupiter:junit-jupiter-engine")
+	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+	testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
+
+
+	// Mockito dependencies
 	testImplementation("org.mockito:mockito-core:5.8.0")
 	testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+
+	// Add this for better JUnit 5 IntelliJ Platform integration
+//	testImplementation("com.intellij.testFramework:testFramework-junit5:1.0.0")
 }
+
 
 intellijPlatform {
 	pluginConfiguration {
