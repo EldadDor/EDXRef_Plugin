@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Queries>
+    <query id="getManagerUserId">
+        <![CDATA[
+                    DECLARE @REQUEST_ID_LAST SY_SERIAL, @USER_ID_NUM SY_ID_NR
+
+					SELECT TOP 1 @REQUEST_ID_LAST = REQUEST_ID FROM M_SAP_HEAD_COUNT ORDER BY ID DESC
+					SELECT  @USER_ID_NUM = ID_NR FROM T_USER WHERE USERID = :userId
+
+					SELECT  convert(int,H.USERID) managerUserId
+					FROM T_USER H
+					WHERE ID_NR = CONVERT(INT,(SELECT DIRECT_MNG_ID
+					                           FROM M_SAP_HEAD_COUNT
+					                           WHERE REQUEST_ID = @REQUEST_ID_LAST AND ID_NUM like '%' + convert(varchar(12),@USER_ID_NUM)))
+			]]>
+    </query>
+    <query id="getUserId">
+        <![CDATA[
+                    DECLARE @REQUEST_ID_LAST SY_SERIAL, @USER_ID_NUM SY_ID_NR
+
+					SELECT TOP 1 @REQUEST_ID_LAST = REQUEST_ID FROM M_SAP_HEAD_COUNT ORDER BY ID DESC
+					SELECT  @USER_ID_NUM = ID_NR FROM T_USER WHERE USERID = :userId
+
+					SELECT  convert(int,H.USERID) managerUserId
+					FROM T_USER H
+					WHERE ID_NR = CONVERT(INT,(SELECT DIRECT_MNG_ID
+					                           FROM M_SAP_HEAD_COUNT
+					                           WHERE REQUEST_ID = @REQUEST_ID_LAST AND ID_NUM like '%' + convert(varchar(12),@USER_ID_NUM)))
+			]]>
+    </query>
+    <query id="updateUserById" update="true">
+        <![CDATA[
+                    DECLARE @REQUEST_ID_LAST SY_SERIAL, @USER_ID_NUM SY_ID_NR
+
+					SELECT TOP 1 @REQUEST_ID_LAST = REQUEST_ID FROM M_SAP_HEAD_COUNT ORDER BY ID DESC
+					SELECT  @USER_ID_NUM = ID_NR FROM T_USER WHERE USERID = :userId
+
+					SELECT  convert(int,H.USERID) managerUserId
+					FROM T_USER H
+					WHERE ID_NR = CONVERT(INT,(SELECT DIRECT_MNG_ID
+					                           FROM M_SAP_HEAD_COUNT
+					                           WHERE REQUEST_ID = @REQUEST_ID_LAST AND ID_NUM like '%' + convert(varchar(12),@USER_ID_NUM)))
+			]]>
+    </query>
+
+
+</Queries>

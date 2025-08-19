@@ -28,6 +28,8 @@ ulid-creator = "5.2.3"
 uuid-generator = "5.1.0"
 zxing = "3.5.3"
 
+test-framework = "252.23892.409"
+
 [libraries]
 assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 commons-codec = { module = "commons-codec:commons-codec", version.ref = "commons-codec" }
@@ -63,6 +65,8 @@ uuid-generator = { module = "com.fasterxml.uuid:java-uuid-generator", version.re
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 zxing-javase = { module = "com.google.zxing:javase", version.ref = "zxing" }
 
+test-framework-common = { module = "com.jetbrains.intellij.platform:test-framework-common", version.ref = "test-framework" }
+
 [bundles]
 jackson = [
     "jackson-core",
@@ -75,6 +79,9 @@ jackson = [
 junit-implementation = [
     "junit-jupiter-api",
     "junit-jupiter-params",
+]
+test-framework = [
+    "test-framework-common"
 ]
 junit-runtime = [
     "junit-jupiter-engine",

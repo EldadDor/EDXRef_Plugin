@@ -148,6 +148,10 @@
 
         <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
 
+        <statusBarWidgetFactory
+                implementation="com.github.edxref.ui.CacheStatsStatusBarWidgetFactory"
+                id="QueryIndexCacheStats"
+                order="after memory"/>
         <!-- Unified EDXRef Plugin Settings -->
         <projectConfigurable
                 id="com.github.edxref.settings.EDXRefSettingsConfigurable"

@@ -36,11 +36,11 @@ object QueryIdResolver {
   }*/
   fun resolveQueryInterface(queryId: String, project: Project): PsiClass? {
     // Delegate to the cached service
-    return QueryIndexService.getInstance(project).findInterfaceById(queryId)
+    return QueryIndexService.getInstance(project).findInterfaceById(queryId) as PsiClass?
   }
 
   fun resolveQueryXml(queryId: String, project: Project): XmlTag? {
     // Delegate to the cached service
-    return QueryIndexService.getInstance(project).findXmlTagById(queryId)
+    return QueryIndexService.getInstance(project).findXmlTagById(queryId) as XmlTag?
   }
 }

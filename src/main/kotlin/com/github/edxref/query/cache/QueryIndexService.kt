@@ -1,374 +1,603 @@
 // src/main/kotlin/com/github/edxref/query/cache/QueryIndexService.kt
 package com.github.edxref.query.cache
 
-// Keep existing imports...
-// Remove WSConsumerSettings import if only used for logIfEnabled
-// import com.github.edxref.settings.WSConsumerSettings.Companion.getWSConsumerSettings
 import com.github.edxref.query.index.QueryUtilsUsageIndex
 import com.github.edxref.query.index.SQLQueryFileIndexer
 import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
 import com.intellij.openapi.components.Service
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.project.DumbService // <<< ADDED IMPORT
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.psi.*
+import com.intellij.psi.JavaPsiFacade
+import com.intellij.psi.JavaRecursiveElementVisitor
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiJavaFile
+import com.intellij.psi.PsiLiteralExpression
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiMethodCallExpression
+import com.intellij.psi.PsiReferenceExpression
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.search.searches.AnnotatedElementsSearch
-import com.intellij.psi.util.CachedValue
-import com.intellij.psi.util.CachedValueProvider
-import com.intellij.psi.util.CachedValuesManager
-import com.intellij.psi.util.PsiModificationTracker
-import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.psi.xml.XmlFile
-import com.intellij.psi.xml.XmlTag
 import com.intellij.util.indexing.FileBasedIndex
+import java.lang.ref.WeakReference
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ForkJoinPool
 
 @Service(Service.Level.PROJECT)
 class QueryIndexService(private val project: Project) {
 
-  // Use standard IntelliJ logger
-  private val log: Logger = logger<QueryIndexService>() // Use direct initialization
+	companion object {
+		private val log = logger<QueryIndexService>()
+		private const val MAX_CACHE_SIZE = 5000
+		private const val BATCH_SIZE = 50
+		private const val MAX_PARALLEL_TASKS = 4
 
-  // Removed logIfEnabled helper - rely on standard log configuration
+		fun getInstance(project: Project): QueryIndexService =
+			project.getService(QueryIndexService::class.java)
+	}
 
-  private fun getSettings(project: Project) = project.getQueryRefSettings()
+	// Memory-efficient caches with weak references
+	private val xmlTagCache = ConcurrentHashMap<String, WeakReference<PsiElement>>()
+	private val interfaceCache = ConcurrentHashMap<String, WeakReference<PsiElement>>()
+	private val queryUtilsUsageCache = ConcurrentHashMap<String, WeakReference<List<PsiElement>>>()
 
-  private fun getSqlRefAnnotationFqn(project: Project) =
-    getSettings(project).sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
+	// Cache hit/miss statistics for monitoring
+	@Volatile
+	private var cacheHits = 0
 
-  private fun getSqlRefAnnotationAttributeName(project: Project) =
-    getSettings(project).sqlRefAnnotationAttributeName.ifBlank { "refId" }
+	@Volatile
+	private var cacheMisses = 0
 
-  private fun getQueryUtilsFqn(project: Project) =
-    getSettings(project).queryUtilsFqn.ifBlank { "com.example.QueryUtils" }
 
-  private fun getQueryUtilsMethodName(project: Project) =
-    getSettings(project).queryUtilsMethodName.ifBlank { "getQuery" }
+	/**
+	 * Batch operation to find multiple XML tags by their IDs
+	 * Optimized for memory efficiency and parallel processing
+	 */
+	fun findMultipleXmlTagsById(queryIds: Set<String>): Map<String, PsiElement> {
+		if (queryIds.isEmpty() || DumbService.isDumb(project)) {
+			return emptyMap()
+		}
 
-  companion object {
-    fun getInstance(project: Project): QueryIndexService =
-      project.getService(QueryIndexService::class.java)
-  }
+		val startTime = System.nanoTime()
+		val result = ConcurrentHashMap<String, PsiElement>()
+		val uncachedIds = mutableSetOf<String>()
 
-  // Cache: Query ID -> SmartPointer<PsiClass>
-  private val interfaceCache: CachedValue<Map<String, SmartPsiElementPointer<PsiClass>>> =
-    CachedValuesManager.getManager(project).createCachedValue {
-      log.info("Building/Rebuilding interface cache...") // Log cache build start
-      val resultMap = mutableMapOf<String, SmartPsiElementPointer<PsiClass>>()
-      val psiFacade = JavaPsiFacade.getInstance(project)
-      val annotationFqn = getSqlRefAnnotationFqn(project)
-      val attributeName = getSqlRefAnnotationAttributeName(project)
-      val annotationClass = psiFacade.findClass(annotationFqn, GlobalSearchScope.allScope(project))
-      val dumbService = DumbService.getInstance(project) // <<< GET DUMB SERVICE INSTANCE
+		// Phase 1: Check cache for existing entries
+		queryIds.forEach { queryId ->
+			xmlTagCache[queryId]?.get()?.let { cachedElement ->
+				if (cachedElement.isValid) {
+					result[queryId] = cachedElement
+					cacheHits++
+				} else {
+					// Remove stale cache entry
+					xmlTagCache.remove(queryId)
+					uncachedIds.add(queryId)
+				}
+			} ?: run {
+				uncachedIds.add(queryId)
+				cacheMisses++
+			}
+		}
 
-      try {
-        if (annotationClass != null) {
-          log.debug("Found annotation class: $annotationFqn")
-          val candidates =
-            AnnotatedElementsSearch.searchPsiClasses(
-                annotationClass,
-                GlobalSearchScope.projectScope(project),
-              )
-              .findAll()
-          log.debug("Found ${candidates.size} potential candidates annotated with $annotationFqn.")
-          val pointerManager = SmartPointerManager.getInstance(project)
-          candidates.forEach { psiClass ->
-            psiClass.annotations
-              .firstOrNull { ann -> ann.qualifiedName == annotationFqn }
-              ?.let { ann ->
-                ann.findAttributeValue(attributeName)?.text?.replace("\"", "")?.let { queryId ->
-                  log.debug(
-                    "Caching interface '${psiClass.name}' for queryId '$queryId'"
-                  ) // Log item add
-                  resultMap[queryId] = pointerManager.createSmartPsiElementPointer(psiClass)
-                }
-              }
-          }
-        } else {
-          log.warn(
-            "Annotation class '$annotationFqn' not found. Interface cache might be incomplete."
-          ) // Log warning if class not found
-        }
-        log.info(
-          "Interface cache build complete. Found ${resultMap.size} entries."
-        ) // Log cache build end
-        CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
-      } catch (e: com.intellij.openapi.progress.ProcessCanceledException) { // <<< CATCH PCE FIRST
-        throw e // Alwa
-      } catch (e: IllegalStateException) {
-        // Log the exception if it still somehow occurs despite the dumb check
-        log.error(
-          "IllegalStateException during index access in Interface computation, even after dumb check.",
-          e,
-        )
-        // Return empty map to avoid further issues in this computation cycle
-        return@createCachedValue CachedValueProvider.Result.create(
-          emptyMap(),
-          dumbService,
-        ) // Depend on dumb service to retry
-      }
-    }
+		if (uncachedIds.isEmpty()) {
+			logPerformance("findMultipleXmlTagsById (cache-only)", startTime, queryIds.size)
+			return result
+		}
 
-  // Cache: Query ID -> SmartPointer<XmlTag>
-  private val xmlTagCache: CachedValue<Map<String, SmartPsiElementPointer<XmlTag>>> =
-    CachedValuesManager.getManager(project).createCachedValue {
-      log.info("Building/Rebuilding XML tag cache...") // Log cache build start
-      val resultMap = mutableMapOf<String, SmartPsiElementPointer<XmlTag>>()
-      val dumbService = DumbService.getInstance(project) // <<< GET DUMB SERVICE INSTANCE
+		// Phase 2: Batch lookup for uncached IDs
+		val batchResults = performBatchXmlTagLookup(uncachedIds)
+		result.putAll(batchResults)
 
-      // *** ADD DUMB MODE CHECK HERE ***
-      if (dumbService.isDumb) {
-        log.warn("XML tag cache computation skipped: Project is in dumb mode.")
-        // Return empty map and depend on DumbService to recompute when indexing finishes
-        return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService)
-      }
-      // *** END DUMB MODE CHECK ***
+		// Phase 3: Update cache with new results (memory-conscious)
+		updateXmlTagCache(batchResults)
 
-      // Proceed only if not in dumb mode
-      val index = FileBasedIndex.getInstance()
-      val psiManager = PsiManager.getInstance(project)
-      val pointerManager = SmartPointerManager.getInstance(project)
-      val searchScope = GlobalSearchScope.projectScope(project)
+		logPerformance("findMultipleXmlTagsById", startTime, queryIds.size)
+		return result
+	}
 
-      try { // Wrap index access in try-catch just in case
-        val allKeys =
-          index.getAllKeys(SQLQueryFileIndexer.KEY, project) // <<< Access index only if not dumb
-        log.debug("Found ${allKeys.size} query IDs in the index.")
+	/**
+	 * Batch operation to find multiple interfaces by their IDs
+	 * Uses parallel processing for large batches
+	 */
+	fun findMultipleInterfacesById(queryIds: Set<String>): Map<String, PsiElement> {
+		if (queryIds.isEmpty() || DumbService.isDumb(project)) {
+			return emptyMap()
+		}
 
-        for (queryId in allKeys) {
-          log.debug("Processing queryId '$queryId' for XML tag cache.")
-          val filePaths = index.getValues(SQLQueryFileIndexer.KEY, queryId, searchScope)
+		val startTime = System.nanoTime()
+		val result = ConcurrentHashMap<String, PsiElement>()
+		val uncachedIds = mutableSetOf<String>()
 
-          val tagPointer: SmartPsiElementPointer<XmlTag>? =
-            filePaths.firstNotNullOfOrNull { filePath ->
-              val vFile = LocalFileSystem.getInstance().findFileByPath(filePath)
-              if (vFile == null || !searchScope.contains(vFile)) {
-                log.debug(
-                  "File path '$filePath' for queryId '$queryId' not found or out of scope. Skipping."
-                ) // Log skip
-                return@firstNotNullOfOrNull null
-              }
+		// Phase 1: Check cache
+		queryIds.forEach { queryId ->
+			interfaceCache[queryId]?.get()?.let { cachedElement ->
+				if (cachedElement.isValid) {
+					result[queryId] = cachedElement
+					cacheHits++
+				} else {
+					interfaceCache.remove(queryId)
+					uncachedIds.add(queryId)
+				}
+			} ?: run {
+				uncachedIds.add(queryId)
+				cacheMisses++
+			}
+		}
 
-              val psiFile = psiManager.findFile(vFile)
-              if (psiFile is XmlFile) {
-                psiFile.rootTag
-                  ?.findSubTags("query")
-                  ?.firstOrNull { tag -> tag.getAttributeValue("id") == queryId }
-                  ?.let { foundTag ->
-                    log.debug(
-                      "Found XML tag for queryId '$queryId' in file '${vFile.path}'. Caching pointer."
-                    ) // Log item add
-                    pointerManager.createSmartPsiElementPointer(foundTag)
-                  }
-              } else {
-                log.warn(
-                  "File '${vFile.path}' for queryId '$queryId' is not an XML file. Skipping."
-                ) // Log warning for non-XML
-                null
-              }
-            }
+		if (uncachedIds.isEmpty()) {
+			logPerformance("findMultipleInterfacesById (cache-only)", startTime, queryIds.size)
+			return result
+		}
 
-          tagPointer?.let { resultMap[queryId] = it }
-        }
-      } catch (e: com.intellij.openapi.progress.ProcessCanceledException) { // <<< CATCH PCE FIRST
-        throw e // Alwa
-      } catch (e: IllegalStateException) {
-        // Log the exception if it still somehow occurs despite the dumb check
-        log.error(
-          "IllegalStateException during index access in xmlTagCache computation, even after dumb check.",
-          e,
-        )
-        // Return empty map to avoid further issues in this computation cycle
-        return@createCachedValue CachedValueProvider.Result.create(
-          emptyMap(),
-          dumbService,
-        ) // Depend on dumb service to retry
-      }
+		// Phase 2: Batch lookup with parallel processing
+		val batchResults = performBatchInterfaceLookup(uncachedIds)
+		result.putAll(batchResults)
 
-      log.info(
-        "XML tag cache build complete. Found ${resultMap.size} entries."
-      ) // Log cache build end
-      // Depend ONLY on PSI modifications when not in dumb mode.
-      CachedValueProvider.Result.create(resultMap, PsiModificationTracker.MODIFICATION_COUNT)
-    }
+		// Phase 3: Update cache
+		updateInterfaceCache(batchResults)
 
-  private val queryUtilsUsageCache:
-    CachedValue<Map<String, List<SmartPsiElementPointer<PsiLiteralExpression>>>> =
-    CachedValuesManager.getManager(project).createCachedValue {
-      log.info("Building/Rebuilding QueryUtils usage cache...") // Add log
-      val resultMap =
-        mutableMapOf<String, MutableList<SmartPsiElementPointer<PsiLiteralExpression>>>()
-      val dumbService = DumbService.getInstance(project) // Check dumb mode
+		logPerformance("findMultipleInterfacesById", startTime, queryIds.size)
+		return result
+	}
 
-      if (dumbService.isDumb) {
-        log.warn("QueryUtils usage cache computation skipped: Project is in dumb mode.")
-        return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService)
-      }
+	/**
+	 * Optimized batch XML tag lookup using chunked parallel processing
+	 */
+	private fun performBatchXmlTagLookup(queryIds: Set<String>): Map<String, PsiElement> {
+		if (queryIds.size <= BATCH_SIZE) {
+			return performSingleBatchXmlLookup(queryIds)
+		}
 
-      val index = FileBasedIndex.getInstance()
-      val psiManager = PsiManager.getInstance(project)
-      val pointerManager = SmartPointerManager.getInstance(project)
-      val searchScope = GlobalSearchScope.projectScope(project)
-      // Get settings *once*
-      val settings = getSettings(project)
-      val expectedFqn = getQueryUtilsFqn(project) // Use helper method
-      val expectedMethodName = getQueryUtilsMethodName(project) // Use helper method
+		// For large sets, use parallel processing with chunks
+		val chunks = queryIds.chunked(BATCH_SIZE)
+		val futures = chunks.map { chunk ->
+			CompletableFuture.supplyAsync({
+				performSingleBatchXmlLookup(chunk.toSet())
+			}, ForkJoinPool.commonPool())
+		}
 
-      try {
-        val allKeys = index.getAllKeys(QueryUtilsUsageIndex.KEY, project)
-        log.debug("QueryUtilsIndex returned ${allKeys.size} potential query IDs.")
+		// Combine results from all chunks
+		val result = ConcurrentHashMap<String, PsiElement>()
+		futures.forEach { future ->
+			try {
+				result.putAll(future.get())
+			} catch (e: Exception) {
+				log.warn("Error in parallel XML tag lookup", e)
+			}
+		}
 
-        for (queryId in allKeys) {
-          // Check if queryId is potentially valid (optional optimization)
-          // if (queryId.isBlank()) continue
+		return result
+	}
 
-          val filePaths = index.getValues(QueryUtilsUsageIndex.KEY, queryId, searchScope)
-          log.debug("Processing queryId '$queryId', found in ${filePaths.size} files from index.")
+	/**
+	 * Single batch XML lookup - processes one chunk
+	 */
+	private fun performSingleBatchXmlLookup(queryIds: Set<String>): Map<String, PsiElement> {
+		val result = mutableMapOf<String, PsiElement>()
+		val fileIndex = FileBasedIndex.getInstance()
+		val processedFiles = mutableSetOf<String>()
 
-          for (filePath in filePaths) {
-            val vFile = LocalFileSystem.getInstance().findFileByPath(filePath) ?: continue
-            // Ensure file is still valid and in scope
-            if (!vFile.isValid || !searchScope.contains(vFile)) continue
+		try {
+			// Get all files that might contain our query IDs
+			val candidateFiles = mutableSetOf<String>()
+			queryIds.forEach { queryId ->
+				fileIndex.getValues(SQLQueryFileIndexer.KEY, queryId, GlobalSearchScope.projectScope(project))
+					.forEach { filePath -> candidateFiles.add(filePath) }
+			}
 
-            val psiFile = psiManager.findFile(vFile) ?: continue
-            log.trace("Scanning file ${vFile.path} for exact matches for queryId '$queryId'")
+			// Process each file only once, looking for all needed IDs
+			candidateFiles.forEach { filePath ->
+				if (processedFiles.add(filePath)) { // Only process each file once
+					processXmlFileForBatch(filePath, queryIds, result)
+				}
+			}
 
-            // Visit the specific file to find the *exact* literal and verify FQN
-            psiFile.accept(
-              object : JavaRecursiveElementVisitor() {
-                override fun visitLiteralExpression(expression: PsiLiteralExpression) {
-                  super.visitLiteralExpression(expression)
-                  // Check if this literal matches the ID we are currently processing
-                  if (expression.value == queryId) {
-                    // Check parent is MethodCallExpression
-                    val methodCall =
-                      PsiTreeUtil.getParentOfType(expression, PsiMethodCallExpression::class.java)
-                    if (
-                      methodCall != null &&
-                        methodCall.argumentList.expressions.firstOrNull() == expression
-                    ) {
-                      val methodExpr = methodCall.methodExpression
-                      // *** Perform ACCURATE check here ***
-                      if (methodExpr.referenceName == expectedMethodName) {
-                        val qualifierExpr =
-                          methodExpr.qualifierExpression as? PsiReferenceExpression
-                        val qualifierType = qualifierExpr?.type
-                        val qualifierFqn = qualifierType?.canonicalText
-                        if (qualifierFqn == expectedFqn) {
-                          // Match found! Add smart pointer to the result map
-                          log.debug(
-                            "Confirmed match: ID='$queryId', FQN='$qualifierFqn', Method='$expectedMethodName' in ${vFile.name}"
-                          )
-                          resultMap
-                            .getOrPut(queryId) { mutableListOf() }
-                            .add(pointerManager.createSmartPsiElementPointer(expression))
-                        } else {
-                          log.trace(
-                            "Method name matches, but FQN mismatch ('$qualifierFqn' != '$expectedFqn') for ID '$queryId' in ${vFile.name}"
-                          )
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            )
-          }
-        }
-      } catch (e: com.intellij.openapi.progress.ProcessCanceledException) { // <<< CATCH PCE FIRST
-        throw e // Always rethrow PCE immediately!
-      } catch (e: IllegalStateException) {
-        // Now this only catches non-PCE IllegalStateExceptions
-        log.error(
-          "IllegalStateException during index access in queryUtilsUsageCache computation, even after dumb check.",
-          e,
-        )
-        return@createCachedValue CachedValueProvider.Result.create(emptyMap(), dumbService)
-      } catch (e: Exception) {
-        // Now this only catches non-PCE Exceptions
-        log.error("Exception during queryUtilsUsageCache computation.", e)
-        return@createCachedValue CachedValueProvider.Result.create(
-          emptyMap(),
-          PsiModificationTracker.MODIFICATION_COUNT,
-        ) // Depend on PSI changes if error
-      }
+		} catch (e: Exception) {
+			log.warn("Error in batch XML tag lookup", e)
+		}
 
-      log.info(
-        "QueryUtils usage cache build complete. Found usages for ${resultMap.size} query IDs."
-      )
-      // Depend on PSI changes and index changes
-      CachedValueProvider.Result.create(
-        resultMap,
-        PsiModificationTracker.MODIFICATION_COUNT, // Correct dependency
-      )
-    }
+		return result
+	}
 
-  fun findQueryUtilsUsagesById(queryId: String): List<PsiLiteralExpression> {
-    return queryUtilsUsageCache.value[queryId]?.mapNotNull { it.element } ?: emptyList()
-  }
+	/**
+	 * Process a single XML file looking for multiple query IDs
+	 */
+	private fun processXmlFileForBatch(filePath: String, targetIds: Set<String>, result: MutableMap<String, PsiElement>) {
+		try {
+			val virtualFile = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(filePath)
+				?: return
 
-  /*fun findQueryUtilsUsagesById(queryId: String): List<PsiLiteralExpression> {
-      val index = FileBasedIndex.getInstance()
-      val filePaths = index.getValues(QueryUtilsUsageIndex.KEY, queryId, GlobalSearchScope.projectScope(project))
-      val psiManager = PsiManager.getInstance(project)
-      val result = mutableListOf<PsiLiteralExpression>()
-      for (filePath in filePaths) {
-          val vFile = LocalFileSystem.getInstance().findFileByPath(filePath) ?: continue
-          val psiFile = psiManager.findFile(vFile) ?: continue
-          psiFile.accept(object : com.intellij.psi.JavaRecursiveElementVisitor() {
-              override fun visitLiteralExpression(expression: PsiLiteralExpression) {
-                  super.visitLiteralExpression(expression)
-                  if (expression.value == queryId) {
-                      val methodCall = expression.parent?.parent as? PsiMethodCallExpression ?: return
-                      val methodExpr = methodCall.methodExpression
-                      val methodName = methodExpr.referenceName
-                      val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
-                      val qualifierType = qualifierExpr?.type
-                      val qualifierFqn = qualifierType?.canonicalText
-                      if (methodName == "getQuery" && qualifierFqn == "com.example.QueryUtils") {
-                          result.add(expression)
-                      }
-                  }
-              }
-          })
-      }
-      return result
-  }*/
+			val psiFile = PsiManager.getInstance(project).findFile(virtualFile) as? XmlFile
+				?: return
 
-  fun findInterfaceById(queryId: String): PsiClass? {
-    log.debug("Looking up interface for queryId '$queryId'") // Log lookup start
-    val result = interfaceCache.value[queryId]?.element
-    log.debug(
-      "Interface lookup for queryId '$queryId' result: ${if (result != null) "Found (${result.name})" else "Not Found"}"
-    ) // Log lookup result
-    return result
-  }
+			val rootTag = psiFile.rootTag ?: return
+			if (rootTag.name != "Queries") return
 
-  fun findXmlTagById(queryId: String): XmlTag? {
-    log.debug("Looking up XML tag for queryId '$queryId'") // Log lookup start
-    // This call might trigger the cache computation if needed
-    val result = xmlTagCache.value[queryId]?.element
-    log.debug(
-      "XML tag lookup for queryId '$queryId' result: ${if (result != null) "Found in file (${result.containingFile.virtualFile?.path})" else "Not Found"}"
-    ) // Log lookup result
-    return result
-  }
+			// Single pass through all query tags
+			rootTag.findSubTags("query").forEach { queryTag ->
+				val queryId = queryTag.getAttributeValue("id")
+				if (queryId != null && queryId in targetIds) {
+					result[queryId] = queryTag
+				}
+			}
 
-  fun getAllQueryIds(): Set<String> {
-    val xmlIds = xmlTagCache.value.keys
-    val interfaceIds = interfaceCache.value.keys
-    val queryUtilsIds = queryUtilsUsageCache.value.keys
-    return xmlIds + interfaceIds + queryUtilsIds
-  }
+		} catch (e: Exception) {
+			log.debug("Error processing XML file $filePath", e)
+		}
+	}
 
-  fun isQueryIdUnused(queryId: String): Boolean {
-    val inXml = xmlTagCache.value.containsKey(queryId)
-    val inInterface = interfaceCache.value.containsKey(queryId)
-    val inQueryUtils = queryUtilsUsageCache.value.containsKey(queryId)
-    // Unused if present in only one place
-    val count = listOf(inXml, inInterface, inQueryUtils).count { it }
-    return count == 1
-  }
+	/**
+	 * Optimized batch interface lookup
+	 */
+	private fun performBatchInterfaceLookup(queryIds: Set<String>): Map<String, PsiElement> {
+		if (queryIds.size <= BATCH_SIZE) {
+			return performSingleBatchInterfaceLookup(queryIds)
+		}
+
+		// Parallel processing for large sets
+		val chunks = queryIds.chunked(BATCH_SIZE)
+		val futures = chunks.map { chunk ->
+			CompletableFuture.supplyAsync({
+				performSingleBatchInterfaceLookup(chunk.toSet())
+			}, ForkJoinPool.commonPool())
+		}
+
+		val result = ConcurrentHashMap<String, PsiElement>()
+		futures.forEach { future ->
+			try {
+				result.putAll(future.get())
+			} catch (e: Exception) {
+				log.warn("Error in parallel interface lookup", e)
+			}
+		}
+
+		return result
+	}
+
+	/**
+	 * Single batch interface lookup
+	 */
+	private fun performSingleBatchInterfaceLookup(queryIds: Set<String>): Map<String, PsiElement> {
+		val result = mutableMapOf<String, PsiElement>()
+
+		try {
+			// Use JavaPsiFacade to find all interfaces efficiently
+			val psiFacade = JavaPsiFacade.getInstance(project)
+			val scope = GlobalSearchScope.projectScope(project)
+
+			// Batch search for interfaces
+			queryIds.forEach { queryId ->
+				val psiClass = psiFacade.findClass(queryId, scope)
+				if (psiClass?.isInterface == true) {
+					result[queryId] = psiClass
+				}
+			}
+
+		} catch (e: Exception) {
+			log.error("Error in batch interface lookup", e)
+		}
+
+		return result
+	}
+
+	/**
+	 * Memory-conscious cache update for XML tags
+	 */
+	private fun updateXmlTagCache(newResults: Map<String, PsiElement>) {
+		// Implement cache size management
+		if (xmlTagCache.size + newResults.size > MAX_CACHE_SIZE) {
+			cleanupCache(xmlTagCache as ConcurrentHashMap<String, WeakReference<*>>)
+		}
+
+		newResults.forEach { (queryId, element) ->
+			xmlTagCache[queryId] = WeakReference(element)
+		}
+	}
+
+	/**
+	 * Memory-conscious cache update for interfaces
+	 */
+	private fun updateInterfaceCache(newResults: Map<String, PsiElement>) {
+		if (interfaceCache.size + newResults.size > MAX_CACHE_SIZE) {
+			cleanupCache(interfaceCache as ConcurrentHashMap<String, WeakReference<*>>)
+		}
+		newResults.forEach { (queryId, element) ->
+			interfaceCache[queryId] = WeakReference(element)
+		}
+	}
+
+	/**
+	 * Clean up stale cache entries
+	 */
+	private fun cleanupCache(cache: ConcurrentHashMap<String, WeakReference<*>>) {
+		val iterator = cache.entries.iterator()
+		var removed = 0
+
+		while (iterator.hasNext() && removed < MAX_CACHE_SIZE / 4) {
+			val entry = iterator.next()
+			if (entry.value.get() == null) {
+				iterator.remove()
+				removed++
+			}
+		}
+
+		log.debug("Cleaned up $removed stale cache entries")
+	}
+
+	/**
+	 * Performance logging
+	 */
+	private fun logPerformance(operation: String, startTime: Long, itemCount: Int) {
+		val duration = (System.nanoTime() - startTime) / 1_000_000
+		if (duration > 50) { // Log operations taking >50ms
+			log.info("$operation: ${duration}ms for $itemCount items (${duration.toDouble() / itemCount}ms per item)")
+		}
+
+		// Log cache statistics periodically
+		val totalRequests = cacheHits + cacheMisses
+		if (totalRequests > 0 && totalRequests % 100 == 0) {
+			val hitRate = (cacheHits.toDouble() / totalRequests * 100).toInt()
+			log.info("Cache hit rate: $hitRate% ($cacheHits hits, $cacheMisses misses)")
+		}
+	}
+
+	// Existing single-item methods (optimized to use batch operations internally)
+	fun findXmlTagById(queryId: String): PsiElement? {
+		return findMultipleXmlTagsById(setOf(queryId))[queryId]
+	}
+
+	fun findInterfaceById(queryId: String): PsiElement? {
+		return findMultipleInterfacesById(setOf(queryId))[queryId]
+	}
+
+	/**
+	 * Clear all caches - useful for testing or memory pressure
+	 */
+	fun clearCaches() {
+		xmlTagCache.clear()
+		interfaceCache.clear()
+		queryUtilsUsageCache.clear()
+		cacheHits = 0
+		cacheMisses = 0
+		log.info("All caches cleared")
+	}
+
+	/**
+	 * Get cache statistics for monitoring
+	 */
+	fun getCacheStats(): Map<String, Any> {
+		return mapOf(
+			"xmlTagCacheSize" to xmlTagCache.size,
+			"interfaceCacheSize" to interfaceCache.size,
+			"cacheHits" to cacheHits,
+			"cacheMisses" to cacheMisses,
+			"hitRate" to if (cacheHits + cacheMisses > 0)
+				(cacheHits.toDouble() / (cacheHits + cacheMisses) * 100).toInt() else 0
+		)
+	}
+
+
+	/**
+	 * Batch operation to find QueryUtils usages by multiple query IDs
+	 * Uses the QueryUtilsUsageIndex for efficient file discovery
+	 */
+	fun findMultipleQueryUtilsUsagesById(queryIds: Set<String>): Map<String, List<PsiElement>> {
+		if (queryIds.isEmpty() || DumbService.isDumb(project)) {
+			return emptyMap()
+		}
+
+		val startTime = System.nanoTime()
+		val result = ConcurrentHashMap<String, List<PsiElement>>()
+		val uncachedIds = mutableSetOf<String>()
+
+		// Phase 1: Check cache for existing entries
+		queryIds.forEach { queryId ->
+			queryUtilsUsageCache[queryId]?.get()?.let { cachedUsages ->
+				if (cachedUsages.all { it.isValid }) {
+					result[queryId] = cachedUsages
+					cacheHits++
+				} else {
+					// Remove stale cache entry
+					queryUtilsUsageCache.remove(queryId)
+					uncachedIds.add(queryId)
+				}
+			} ?: run {
+				uncachedIds.add(queryId)
+				cacheMisses++
+			}
+		}
+
+		if (uncachedIds.isEmpty()) {
+			logPerformance("findMultipleQueryUtilsUsagesById (cache-only)", startTime, queryIds.size)
+			return result
+		}
+
+		// Phase 2: Batch lookup for uncached IDs using the index
+		val batchResults = performBatchQueryUtilsUsageLookup(uncachedIds)
+		result.putAll(batchResults)
+
+		// Phase 3: Update cache with new results
+		updateQueryUtilsUsageCache(batchResults)
+
+		logPerformance("findMultipleQueryUtilsUsagesById", startTime, queryIds.size)
+		return result
+	}
+
+	/**
+	 * Single query ID lookup - uses batch operations internally for efficiency
+	 */
+	fun findQueryUtilsUsagesById(queryId: String): List<PsiElement> {
+		return findMultipleQueryUtilsUsagesById(setOf(queryId))[queryId] ?: emptyList()
+	}
+
+	/**
+	 * Batch QueryUtils usage lookup using your existing QueryUtilsUsageIndex
+	 * This is where the magic happens - we use your index efficiently!
+	 */
+	private fun performBatchQueryUtilsUsageLookup(queryIds: Set<String>): Map<String, List<PsiElement>> {
+		if (queryIds.size <= BATCH_SIZE) {
+			return performSingleBatchQueryUtilsLookup(queryIds)
+		}
+
+		// For large sets, use parallel processing with chunks
+		val chunks = queryIds.chunked(BATCH_SIZE)
+		val futures = chunks.map { chunk ->
+			CompletableFuture.supplyAsync({
+				performSingleBatchQueryUtilsLookup(chunk.toSet())
+			}, ForkJoinPool.commonPool())
+		}
+
+		// Combine results from all chunks
+		val result = ConcurrentHashMap<String, List<PsiElement>>()
+		futures.forEach { future ->
+			try {
+				val chunkResult = future.get()
+				chunkResult.forEach { (queryId, usages) ->
+					result.merge(queryId, usages) { existing, new -> existing + new }
+				}
+			} catch (e: Exception) {
+				log.warn("Error in parallel QueryUtils usage lookup", e)
+			}
+		}
+
+		return result
+	}
+
+	/**
+	 * Core batch lookup logic - uses your QueryUtilsUsageIndex efficiently
+	 */
+	private fun performSingleBatchQueryUtilsLookup(queryIds: Set<String>): Map<String, List<PsiElement>> {
+		val result = mutableMapOf<String, List<PsiElement>>()
+		val fileIndex = FileBasedIndex.getInstance()
+
+		try {
+			// Step 1: Use your QueryUtilsUsageIndex to get file paths for all query IDs
+			val queryIdToFiles = mutableMapOf<String, MutableSet<String>>()
+
+			queryIds.forEach { queryId ->
+				// This uses your existing index: QueryUtilsUsageIndex.KEY
+				val filePaths = fileIndex.getValues(
+					QueryUtilsUsageIndex.KEY,
+					queryId,
+					GlobalSearchScope.projectScope(project)
+				)
+
+				if (filePaths.isNotEmpty()) {
+					queryIdToFiles[queryId] = filePaths.toMutableSet()
+				}
+			}
+
+			// Step 2: Group by file path to minimize file processing
+			val fileToQueryIds = mutableMapOf<String, MutableSet<String>>()
+			queryIdToFiles.forEach { (queryId, filePaths) ->
+				filePaths.forEach { filePath ->
+					fileToQueryIds.computeIfAbsent(filePath) { mutableSetOf() }.add(queryId)
+				}
+			}
+
+			// Step 3: Process each file only once, looking for all relevant query IDs
+			fileToQueryIds.forEach { (filePath, targetQueryIds) ->
+				val fileUsages = processJavaFileForBatchUsages(filePath, targetQueryIds)
+				fileUsages.forEach { (queryId, usages) ->
+					result.merge(queryId, usages) { existing, new -> existing + new }
+				}
+			}
+
+		} catch (e: Exception) {
+			log.warn("Error in batch QueryUtils usage lookup using index", e)
+		}
+
+		return result
+	}
+
+	/**
+	 * Process a single Java file looking for multiple query ID usages
+	 * This validates the index results and extracts actual PsiElements
+	 */
+	private fun processJavaFileForBatchUsages(filePath: String, targetIds: Set<String>): Map<String, List<PsiElement>> {
+		val result = mutableMapOf<String, MutableList<PsiElement>>()
+
+		try {
+			val virtualFile = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(filePath)
+				?: return emptyMap()
+
+			val psiFile = PsiManager.getInstance(project).findFile(virtualFile) as? PsiJavaFile
+				?: return emptyMap()
+
+			// Get settings once for this file
+			val settings = project.getQueryRefSettings()
+			val expectedMethodName = settings.queryUtilsMethodName.ifBlank { "getQuery" }
+			val expectedFqn = settings.queryUtilsFqn.ifBlank { "com.example.QueryUtils" }
+
+			// Single pass through the file using optimized visitor
+			psiFile.accept(object : JavaRecursiveElementVisitor() {
+				override fun visitMethodCallExpression(call: PsiMethodCallExpression) {
+					super.visitMethodCallExpression(call)
+
+					val methodExpr = call.methodExpression
+
+					// Fast method name check
+					if (methodExpr.referenceName != expectedMethodName) {
+						return
+					}
+
+					// Extract query ID from first argument
+					val args = call.argumentList.expressions
+					if (args.size >= 1 && args[0] is PsiLiteralExpression) {
+						val literal = args[0] as PsiLiteralExpression
+						val queryId = literal.value as? String
+
+						if (queryId != null && queryId in targetIds) {
+							// Perform validation only for matching IDs
+							if (isValidQueryUtilsCall(call, expectedMethodName, expectedFqn)) {
+								result.computeIfAbsent(queryId) { mutableListOf() }.add(call)
+							}
+						}
+					}
+				}
+			})
+
+		} catch (e: Exception) {
+			log.debug("Error processing Java file $filePath for QueryUtils usages", e)
+		}
+
+		// Convert MutableList to List for return type
+		return result.mapValues { it.value.toList() }
+	}
+
+
+	/**
+	 * Validates that this is actually a QueryUtils call (not just indexed heuristically)
+	 */
+	private fun isValidQueryUtilsCall(call: PsiMethodCallExpression, expectedMethodName: String, expectedFqn: String): Boolean {
+		val methodExpr = call.methodExpression
+
+		// Method name check (already done, but keeping for completeness)
+		if (methodExpr.referenceName != expectedMethodName) return false
+
+		// Type-based validation - this is the expensive but accurate check
+		val qualifierExpr = methodExpr.qualifierExpression as? PsiReferenceExpression
+		val qualifierType = qualifierExpr?.type
+		val qualifierFqn = qualifierType?.canonicalText
+
+		return qualifierFqn == expectedFqn
+	}
+
+	// ... (rest of the existing methods for XML tags and interfaces remain the same)
+
+	/**
+	 * Memory-conscious cache update for QueryUtils usages
+	 */
+	private fun updateQueryUtilsUsageCache(newResults: Map<String, List<PsiElement>>) {
+		if (queryUtilsUsageCache.size + newResults.size > MAX_CACHE_SIZE) {
+			cleanupCache(queryUtilsUsageCache as ConcurrentHashMap<String, WeakReference<*>>)
+		}
+
+		newResults.forEach { (queryId, usages) ->
+			queryUtilsUsageCache[queryId] = WeakReference(usages)
+		}
+	}
+
+
 }
