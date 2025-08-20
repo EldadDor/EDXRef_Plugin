@@ -44,6 +44,7 @@
 
         <fileBasedIndex implementation="com.github.edxref.query.index.SQLQueryFileIndexer"/>
         <fileBasedIndex implementation="com.github.edxref.query.index.QueryUtilsUsageIndex"/>
+        <fileBasedIndex implementation="com.github.edxref.query.index.SQLRefAnnotationIndex"/>
         <!--<projectService
                 serviceImplementation="com.github.edxref.query.cache.QueryIndexService" />-->
         <localInspection

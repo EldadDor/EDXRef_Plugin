@@ -3,6 +3,7 @@ package com.github.edxref.query.cache
 
 import com.github.edxref.query.index.QueryUtilsUsageIndex
 import com.github.edxref.query.index.SQLQueryFileIndexer
+import com.github.edxref.query.index.SQLRefAnnotationIndex
 import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
@@ -10,6 +11,7 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.JavaRecursiveElementVisitor
+import com.intellij.psi.PsiAnnotation
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiLiteralExpression
@@ -19,6 +21,8 @@ import com.intellij.psi.PsiReferenceExpression
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.xml.XmlFile
 import com.intellij.util.indexing.FileBasedIndex
+import org.jetbrains.kotlin.idea.testIntegration.framework.KotlinPsiBasedTestFramework.Companion.asKtClassOrObject
+import org.jetbrains.kotlin.nj2k.getContainingClass
 import java.lang.ref.WeakReference
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -256,26 +260,92 @@ class QueryIndexService(private val project: Project) {
 	}
 
 	/**
-	 * Single batch interface lookup
+	 * Single batch interface lookup - FIXED to use SQLRef annotation index
 	 */
 	private fun performSingleBatchInterfaceLookup(queryIds: Set<String>): Map<String, PsiElement> {
 		val result = mutableMapOf<String, PsiElement>()
+		val fileIndex = FileBasedIndex.getInstance()
 
 		try {
-			// Use JavaPsiFacade to find all interfaces efficiently
-			val psiFacade = JavaPsiFacade.getInstance(project)
-			val scope = GlobalSearchScope.projectScope(project)
+			// Step 1: Use SQLRefAnnotationIndex to get file paths for all query IDs
+			val queryIdToFiles = mutableMapOf<String, MutableSet<String>>()
 
-			// Batch search for interfaces
 			queryIds.forEach { queryId ->
-				val psiClass = psiFacade.findClass(queryId, scope)
-				if (psiClass?.isInterface == true) {
-					result[queryId] = psiClass
+				// Use the SQLRef annotation index
+				val filePaths = fileIndex.getValues(
+					SQLRefAnnotationIndex.KEY,
+					queryId,
+					GlobalSearchScope.projectScope(project)
+				)
+
+				if (filePaths.isNotEmpty()) {
+					queryIdToFiles[queryId] = filePaths.toMutableSet()
 				}
 			}
 
+			// Step 2: Group by file path to minimize file processing
+			val fileToQueryIds = mutableMapOf<String, MutableSet<String>>()
+			queryIdToFiles.forEach { (queryId, filePaths) ->
+				filePaths.forEach { filePath ->
+					fileToQueryIds.computeIfAbsent(filePath) { mutableSetOf() }.add(queryId)
+				}
+			}
+
+			// Step 3: Process each file only once, looking for all relevant query IDs
+			fileToQueryIds.forEach { (filePath, targetQueryIds) ->
+				val fileResults = processJavaFileForSQLRefAnnotations(filePath, targetQueryIds)
+				result.putAll(fileResults)
+			}
+
 		} catch (e: Exception) {
-			log.error("Error in batch interface lookup", e)
+			log.warn("Error in batch SQLRef annotation lookup using index", e)
+		}
+
+		return result
+	}
+
+	/**
+	 * Process a single Java file looking for SQLRef annotations with specific refIds
+	 */
+	private fun processJavaFileForSQLRefAnnotations(filePath: String, targetIds: Set<String>): Map<String, PsiElement> {
+		val result = mutableMapOf<String, PsiElement>()
+
+		try {
+			val virtualFile = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(filePath)
+				?: return emptyMap()
+
+			val psiFile = PsiManager.getInstance(project).findFile(virtualFile) as? PsiJavaFile
+				?: return emptyMap()
+
+			// Get settings once for this file
+			val settings = project.getQueryRefSettings()
+			val annotationFqn = settings.sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
+			val attributeName = settings.sqlRefAnnotationAttributeName.ifBlank { "refId" }
+
+			// Single pass through the file looking for SQLRef annotations
+			psiFile.accept(object : JavaRecursiveElementVisitor() {
+				override fun visitAnnotation(annotation: PsiAnnotation) {
+					super.visitAnnotation(annotation)
+
+					// Check if this is an SQLRef annotation
+					if (annotation.qualifiedName == annotationFqn) {
+						val refIdValue = annotation.findAttributeValue(attributeName)?.text?.replace("\"", "")
+
+						if (refIdValue != null && refIdValue in targetIds) {
+							// Found a matching SQLRef annotation
+							// The target should be the interface/class containing this annotation
+							val containingClass = annotation.asKtClassOrObject()
+							if (containingClass != null) {
+								result[refIdValue] = containingClass
+								log.debug("Found SQLRef annotation for queryId '$refIdValue' in class '${containingClass.name}'")
+							}
+						}
+					}
+				}
+			})
+
+		} catch (e: Exception) {
+			log.debug("Error processing Java file $filePath for SQLRef annotations", e)
 		}
 
 		return result
