@@ -44,11 +44,8 @@ class SQLRefAnnotationIndex : FileBasedIndexExtension<String, String>() {
 	override fun getIndexer(): DataIndexer<String, String, FileContent> {
 		return DataIndexer { inputData ->
 			val map = mutableMapOf<String, String>()
-			val psiFile = inputData.psiFile
-
-			if (psiFile is PsiJavaFile) {
-				val project = psiFile.project
-
+			try {
+				val project = inputData.project
 				// Check if project is in dumb mode to avoid IndexNotReadyException
 				val (annotationFqn, attributeName) = if (DumbService.isDumb(project)) {
 					// Use defaults during dumb mode
@@ -60,25 +57,21 @@ class SQLRefAnnotationIndex : FileBasedIndexExtension<String, String>() {
 					val attr = settings.sqlRefAnnotationAttributeName.ifBlank { "refId" }
 					fqn to attr
 				}
-				psiFile.accept(
-					object : JavaRecursiveElementVisitor() {
-						override fun visitAnnotation(annotation: PsiAnnotation) {
-							super.visitAnnotation(annotation)
+				val content = inputData.contentAsText.toString()
+				val simpleAnnotationName = annotationFqn.substringAfterLast('.')
 
-							if (annotation.qualifiedName == annotationFqn) {
-								val refIdValue =
-									annotation.findAttributeValue(attributeName)?.text?.replace("\"", "")
+				// Regex to find annotation with attribute
+				val pattern = Regex("""@$simpleAnnotationName\s*\(\s*$attributeName\s*=\s*"([^"]+)"""")
 
-								if (!refIdValue.isNullOrBlank()) {
-									log.debug(
-										"Indexer found SQLRef annotation: refId='$refIdValue' in ${inputData.file.name}"
-									)
-									map[refIdValue] = inputData.file.path
-								}
-							}
-						}
+				pattern.findAll(content).forEach { match ->
+					val refIdValue = match.groupValues[1]
+					if (refIdValue.isNotBlank()) {
+						log.debug("Indexer found SQLRef annotation: refId='$refIdValue' in ${inputData.file.name}")
+						map[refIdValue] = inputData.file.path
 					}
-				)
+				}
+			} catch (e: Exception) {
+				log.warn("Error indexing file ${inputData.file.name}", e)
 			}
 			map
 		}

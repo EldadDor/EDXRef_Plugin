@@ -1,16 +1,16 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>com.github.edxref</id>
-    <name>edxref</name>
-    <vendor>eldaddor</vendor>
+	<id>com.github.edxref</id>
+	<name>edxref</name>
+	<vendor>eldaddor</vendor>
 
 
-    <!-- Add version information -->
-    <version>1.2</version>
+	<!-- Add version information -->
+	<version>1.2</version>
 
-    <!-- Add IDE compatibility information -->
-    <idea-version since-build="223.8836" until-build="252.*"/>
-    <description><![CDATA[
+	<!-- Add IDE compatibility information -->
+	<idea-version since-build="223.8836" until-build="252.*"/>
+	<description><![CDATA[
         <p>This is an Inspection Suite plugin, that used for the WebServiceConsumer & PearlWebServiceConsumer</p>
         <h2>Key Features</h2>
         <ul>
@@ -19,163 +19,168 @@
     ]]></description>
 
 
-    <depends>com.intellij.modules.platform</depends>
-    <depends>com.intellij.modules.java</depends>
-    <depends>com.intellij.modules.lang</depends>
-    <depends>org.jetbrains.kotlin</depends>
+	<depends>com.intellij.modules.platform</depends>
+	<depends>com.intellij.modules.java</depends>
+	<depends>com.intellij.modules.lang</depends>
+	<depends>org.jetbrains.kotlin</depends>
 
-    <resource-bundle>messages.MyBundle</resource-bundle>
+	<resource-bundle>messages.MyBundle</resource-bundle>
 
-    <extensions defaultExtensionNs="org.jetbrains.kotlin">
-        <supportsKotlinPluginMode supportsK2="true"/>
-    </extensions>
+	<extensions defaultExtensionNs="org.jetbrains.kotlin">
+		<supportsKotlinPluginMode supportsK2="true"/>
+	</extensions>
 
-    <extensions defaultExtensionNs="com.intellij">
-        <notificationGroup id="EDXRef Notifications" displayType="BALLOON" bundle="messages.MyBundle" key="notification.group.edxref.notifications"/>
+	<extensions defaultExtensionNs="com.intellij">
+		<notificationGroup id="EDXRef Notifications" displayType="BALLOON" bundle="messages.MyBundle" key="notification.group.edxref.notifications"/>
 
-        <codeInsight.lineMarkerProvider language="JAVA"
-                                        implementationClass="com.github.edxref.query.gutter.JavaQueryLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="JAVA"
-                                        implementationClass="com.github.edxref.query.gutter.MethodQueryUtilLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="XML"
-                                        implementationClass="com.github.edxref.query.gutter.XmlQueryLineMarkerProvider"/>
+		<codeInsight.lineMarkerProvider language="JAVA"
+		                                implementationClass="com.github.edxref.query.gutter.JavaQueryLineMarkerProvider"/>
+		<codeInsight.lineMarkerProvider language="JAVA"
+		                                implementationClass="com.github.edxref.query.gutter.MethodQueryUtilLineMarkerProvider"/>
+		<codeInsight.lineMarkerProvider language="XML"
+		                                implementationClass="com.github.edxref.query.gutter.XmlQueryLineMarkerProvider"/>
 
-        <gotoDeclarationHandler implementation="com.github.edxref.query.navigation.QueryGotoDeclarationHandler"/>
+		<gotoDeclarationHandler implementation="com.github.edxref.query.navigation.QueryGotoDeclarationHandler"/>
 
-        <fileBasedIndex implementation="com.github.edxref.query.index.SQLQueryFileIndexer"/>
-        <fileBasedIndex implementation="com.github.edxref.query.index.QueryUtilsUsageIndex"/>
-        <fileBasedIndex implementation="com.github.edxref.query.index.SQLRefAnnotationIndex"/>
-        <!--<projectService
-                serviceImplementation="com.github.edxref.query.cache.QueryIndexService" />-->
-        <localInspection
-                language="kotlin"
-                shortName="WSConsumerValidationKotlin"
-                displayName="WSConsumer Annotation Validation"
-                groupName="Web Service Inspections"
-                groupPath="Web Services, WS Inspections"
-                enabledByDefault="true"
-                level="ERROR"
-                implementationClass="com.github.edxref.inspection.WSConsumerKotlinInspection"/>
-        <localInspection
-                language="JAVA"
-                shortName="WSConsumerValidationJava"
-                displayName="WSConsumer annotation validation"
-                groupName="Web service inspections"
-                groupPath="Web services, WS inspections"
-                enabledByDefault="true"
-                level="ERROR"
-                implementationClass="com.github.edxref.inspection.WSConsumerJavaInspection"/>
-        <localInspection
-                language="JAVA"
-                shortName="WSClassParamValidationJava"
-                displayName="WSConsumer Class Parameter Validation (Pearl)"
-                groupName="Custom Validations"
-                enabledByDefault="true"
-                level="ERROR"
-                implementationClass="com.github.edxref.inspection.WSClassParamJavaInspection"/>
-        <localInspection
-                language="kotlin"
-                shortName="WSClassParamValidationKotlin"
-                displayName="WSConsumer Class Parameter Validation (Pearl)"
-                groupName="Custom Validations"
-                enabledByDefault="true"
-                level="ERROR"
-                implementationClass="com.github.edxref.inspection.WSClassParamKotlinInspection"/>
-        <!--         NEW: Register WSInterfaceParamInspection -->
-        <localInspection
-                language="JAVA"
-                shortName="WSInterfaceParamValidationJava"
-                displayName="WSConsumer interface parameter validation"
-                groupName="Web service inspections"
-                groupPath="Web services, WS inspections"
-                enabledByDefault="true"
-                level="ERROR"
-                implementationClass="com.github.edxref.inspection.WSInterfaceParamJavaInspection"/>
-        <localInspection
-                language="kotlin"
-                shortName="WSInterfaceParamValidationKotlin"
-                displayName="WSConsumer interface parameter validation"
-                groupName="Web service inspections"
-                groupPath="Web services, WS inspections"
-                enabledByDefault="true"
-                level="ERROR"
-                implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
-        <localInspection language="JAVA"
-                         shortName="WSHeadersOnTypeValidationJava"
-                         displayName="WSConsumer Type Header Validation (@WSHeaders)"
-                         groupName="Custom Validations"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSHeadersOnTypeJavaInspection"/>
-        <localInspection language="kotlin"
-                         shortName="WSHeadersOnTypeValidationKotlin"
-                         displayName="WSConsumer Type Header Validation (@WSHeaders)"
-                         groupName="Custom Validations"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSHeadersOnTypeKotlinInspection
+		<fileBasedIndex implementation="com.github.edxref.query.index.SQLQueryFileIndexer"/>
+		<fileBasedIndex implementation="com.github.edxref.query.index.QueryUtilsUsageIndex"/>
+		<fileBasedIndex implementation="com.github.edxref.query.index.SQLRefAnnotationIndex"/>
+		<!--<projectService
+				serviceImplementation="com.github.edxref.query.cache.QueryIndexService" />-->
+		<localInspection
+				language="kotlin"
+				shortName="WSConsumerValidationKotlin"
+				displayName="WSConsumer Annotation Validation"
+				groupName="Web Service Inspections"
+				groupPath="Web Services, WS Inspections"
+				enabledByDefault="true"
+				level="ERROR"
+				implementationClass="com.github.edxref.inspection.WSConsumerKotlinInspection"/>
+		<localInspection
+				language="JAVA"
+				shortName="WSConsumerValidationJava"
+				displayName="WSConsumer annotation validation"
+				groupName="Web service inspections"
+				groupPath="Web services, WS inspections"
+				enabledByDefault="true"
+				level="ERROR"
+				implementationClass="com.github.edxref.inspection.WSConsumerJavaInspection"/>
+		<localInspection
+				language="JAVA"
+				shortName="WSClassParamValidationJava"
+				displayName="WSConsumer Class Parameter Validation (Pearl)"
+				groupName="Custom Validations"
+				enabledByDefault="true"
+				level="ERROR"
+				implementationClass="com.github.edxref.inspection.WSClassParamJavaInspection"/>
+		<localInspection
+				language="kotlin"
+				shortName="WSClassParamValidationKotlin"
+				displayName="WSConsumer Class Parameter Validation (Pearl)"
+				groupName="Custom Validations"
+				enabledByDefault="true"
+				level="ERROR"
+				implementationClass="com.github.edxref.inspection.WSClassParamKotlinInspection"/>
+		<!--         NEW: Register WSInterfaceParamInspection -->
+		<localInspection
+				language="JAVA"
+				shortName="WSInterfaceParamValidationJava"
+				displayName="WSConsumer interface parameter validation"
+				groupName="Web service inspections"
+				groupPath="Web services, WS inspections"
+				enabledByDefault="true"
+				level="ERROR"
+				implementationClass="com.github.edxref.inspection.WSInterfaceParamJavaInspection"/>
+		<localInspection
+				language="kotlin"
+				shortName="WSInterfaceParamValidationKotlin"
+				displayName="WSConsumer interface parameter validation"
+				groupName="Web service inspections"
+				groupPath="Web services, WS inspections"
+				enabledByDefault="true"
+				level="ERROR"
+				implementationClass="com.github.edxref.inspection.WSInterfaceParamKotlinInspection"/>
+		<localInspection language="JAVA"
+		                 shortName="WSHeadersOnTypeValidationJava"
+		                 displayName="WSConsumer Type Header Validation (@WSHeaders)"
+		                 groupName="Custom Validations"
+		                 enabledByDefault="true"
+		                 level="ERROR"
+		                 implementationClass="com.github.edxref.inspection.WSHeadersOnTypeJavaInspection"/>
+		<localInspection language="kotlin"
+		                 shortName="WSHeadersOnTypeValidationKotlin"
+		                 displayName="WSConsumer Type Header Validation (@WSHeaders)"
+		                 groupName="Custom Validations"
+		                 enabledByDefault="true"
+		                 level="ERROR"
+		                 implementationClass="com.github.edxref.inspection.WSHeadersOnTypeKotlinInspection
 "/>
 
-        <!-- NEW: Register WSHeaderOnMethodInspection -->
-        <localInspection language="JAVA"
-                         shortName="WSHeaderOnMethodValidationJava"
-                         displayName="WSConsumer Method Header Validation (@WSHeader)"
-                         groupName="Custom Validations"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSHeaderOnMethodJavaInspection"/>
-        <localInspection language="kotlin"
-                         shortName="WSHeaderOnMethodValidationKotlin"
-                         displayName="WSConsumer Method Header Validation (@WSHeader)"
-                         groupName="Custom Validations"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="com.github.edxref.inspection.WSHeaderOnMethodKotlinInspection
+		<!-- NEW: Register WSHeaderOnMethodInspection -->
+		<localInspection language="JAVA"
+		                 shortName="WSHeaderOnMethodValidationJava"
+		                 displayName="WSConsumer Method Header Validation (@WSHeader)"
+		                 groupName="Custom Validations"
+		                 enabledByDefault="true"
+		                 level="ERROR"
+		                 implementationClass="com.github.edxref.inspection.WSHeaderOnMethodJavaInspection"/>
+		<localInspection language="kotlin"
+		                 shortName="WSHeaderOnMethodValidationKotlin"
+		                 displayName="WSConsumer Method Header Validation (@WSHeader)"
+		                 groupName="Custom Validations"
+		                 enabledByDefault="true"
+		                 level="ERROR"
+		                 implementationClass="com.github.edxref.inspection.WSHeaderOnMethodKotlinInspection
 "/>
-        <localInspection language="JAVA"
-                         shortName="InternalApiValidationJava"
-                         displayName="Internal API Usage Validation (@InternalApi)"
-                         groupName="Custom Validations"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="com.github.edxref.inspection.InternalApiJavaInspection"/>
-        <localInspection language="kotlin"
-                         shortName="InternalApiValidationKotlin"
-                         displayName="Internal API Usage Validation (@InternalApi)"
-                         groupName="Custom Validations"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="com.github.edxref.inspection.InternalApiKotlinInspection"/>
+		<localInspection language="JAVA"
+		                 shortName="InternalApiValidationJava"
+		                 displayName="Internal API Usage Validation (@InternalApi)"
+		                 groupName="Custom Validations"
+		                 enabledByDefault="true"
+		                 level="ERROR"
+		                 implementationClass="com.github.edxref.inspection.InternalApiJavaInspection"/>
+		<localInspection language="kotlin"
+		                 shortName="InternalApiValidationKotlin"
+		                 displayName="Internal API Usage Validation (@InternalApi)"
+		                 groupName="Custom Validations"
+		                 enabledByDefault="true"
+		                 level="ERROR"
+		                 implementationClass="com.github.edxref.inspection.InternalApiKotlinInspection"/>
 
-        <toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+		<toolWindow factoryClass="com.github.edxref.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
 
-        <statusBarWidgetFactory
-                implementation="com.github.edxref.ui.CacheStatsStatusBarWidgetFactory"
-                id="QueryIndexCacheStats"
-                order="after memory"/>
-        <!-- Unified EDXRef Plugin Settings -->
-        <projectConfigurable
-                id="com.github.edxref.settings.EDXRefSettingsConfigurable"
-                displayName="EDXRef Plugin"
-                instance="com.github.edxref.settings.EDXRefSettingsConfigurable"
-                parentId="language"
-                order="last"/>
+		<statusBarWidgetFactory
+				implementation="com.github.edxref.ui.CacheStatsStatusBarWidgetFactory"
+				id="QueryIndexCacheStats"
+				order="after memory"/>
+		<!-- Unified EDXRef Plugin Settings -->
+		<projectConfigurable
+				id="com.github.edxref.settings.EDXRefSettingsConfigurable"
+				displayName="EDXRef Plugin"
+				instance="com.github.edxref.settings.EDXRefSettingsConfigurable"
+				parentId="language"
+				order="last"/>
 
-    </extensions>
-    <actions>
-        <!-- ... other actions ... -->
+	</extensions>
+	<actions>
+		<!-- ... other actions ... -->
 
-        <action id="com.github.edxref.actions.ScanInternalApiAction"
-                class="com.github.edxref.actions.ScanInternalApiAction"
-                text="Scan for @InternalApi Usages (Java)"
-                description="Scans the project for Java usages of the @InternalApi annotation.">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-            <!-- You could also add it to AnalyzeMenu, etc. -->
-        </action>
+		<action id="com.github.edxref.actions.ScanInternalApiAction"
+		        class="com.github.edxref.actions.ScanInternalApiAction"
+		        text="Scan for @InternalApi Usages (Java)"
+		        description="Scans the project for Java usages of the @InternalApi annotation.">
+			<add-to-group group-id="ToolsMenu" anchor="last"/>
+			<!-- You could also add it to AnalyzeMenu, etc. -->
+		</action>
+			<action id="com.github.edxref.actions.ReindexQueryAction"
+					class="com.github.edxref.query.actions.ReindexQueryAction"
+					text="Reindex QueryRef Indexes"
+					description="Force reindex of all QueryRef custom indexes">
+				<add-to-group group-id="ToolsMenu" anchor="last"/>
+			</action>
+		</actions>
 
-    </actions>
-
-    <!--<applicationListeners>
-        <listener class="com.github.edxref.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
-    </applicationListeners>-->
+	<!--<applicationListeners>
+		<listener class="com.github.edxref.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
+	</applicationListeners>-->
 </idea-plugin>
