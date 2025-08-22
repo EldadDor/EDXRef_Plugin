@@ -1,14 +1,5 @@
 package com.github.edxref.query.ng.gutter
 
-/*
- * User: eadno1
- * Date: 21/08/2025
- *
- * Copyright (2005) IDI. All rights reserved.
- * This software is a proprietary information of Israeli Direct Insurance.
- * Created by IntelliJ IDEA.
- */
-
 import com.github.edxref.icons.EDXRefIcons
 import com.github.edxref.query.ng.service.NGQueryService
 import com.intellij.codeInsight.daemon.LineMarkerInfo
@@ -18,7 +9,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.psi.*
 
-/** Line marker for XML query definitions */
+/** Line marker for XML query definitions - now includes SQLRef annotations */
 class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
 
   private val log = logger<NGXmlQueryLineMarkerProvider>()
@@ -45,12 +36,20 @@ class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
           if (attribute.name == "id" && tag.name == "query") {
             val queryId = element.value
             if (queryId.isNotBlank()) {
-              val usages = service.findQueryUtilsUsages(queryId)
-              if (usages.isNotEmpty()) {
+              // Find both QueryUtils usages and SQLRef annotations
+              val targets = mutableListOf<PsiElement>()
+
+              // Add QueryUtils usages
+              targets.addAll(service.findQueryUtilsUsages(queryId))
+
+              // Add SQLRef annotations
+              targets.addAll(service.findSQLRefAnnotations(queryId))
+
+              if (targets.isNotEmpty()) {
                 val builder =
                   NavigationGutterIconBuilder.create(EDXRefIcons.XML_TO_JAVA)
-                    .setTargets(usages)
-                    .setTooltipText("Navigate to QueryUtils usages")
+                    .setTargets(targets)
+                    .setTooltipText("Navigate to QueryUtils usages and SQLRef annotations")
                     .setAlignment(GutterIconRenderer.Alignment.LEFT)
 
                 val token = element.children.firstOrNull { it is com.intellij.psi.xml.XmlToken }

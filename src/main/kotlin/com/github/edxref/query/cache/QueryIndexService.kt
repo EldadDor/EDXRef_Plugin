@@ -713,7 +713,7 @@ class QueryIndexService(private val project: Project) {
       // Request reindex for all your custom indexes
       fileBasedIndex.requestRebuild(NGQueryUtilsIndex.KEY)
       fileBasedIndex.requestRebuild(NGXmlQueryIndex.KEY)
-//      fileBasedIndex.requestRebuild(QueryUtilsUsageIndex.KEY)
+      //      fileBasedIndex.requestRebuild(QueryUtilsUsageIndex.KEY)
 
       // Clear local caches since they might contain stale data
       clearCaches()

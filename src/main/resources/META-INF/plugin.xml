@@ -44,7 +44,9 @@
 
         <fileBasedIndex implementation="com.github.edxref.query.ng.index.NGXmlQueryIndex"/>
         <fileBasedIndex implementation="com.github.edxref.query.ng.index.NGQueryUtilsIndex"/>
+        <fileBasedIndex implementation="com.github.edxref.query.ng.index.NGSQLRefIndex"/>
 
+        <postStartupActivity implementation="com.github.edxref.query.ng.service.SQLRefPostIndexingTask"/>
         <!-- New NG line markers -->
         <codeInsight.lineMarkerProvider
                 language="XML"
@@ -52,6 +54,9 @@
         <codeInsight.lineMarkerProvider
                 language="JAVA"
                 implementationClass="com.github.edxref.query.ng.gutter.NGQueryUtilsLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider
+                language="JAVA"
+                implementationClass="com.github.edxref.query.ng.gutter.NGSQLRefLineMarkerProvider"/>
 
 <!--		<fileBasedIndex implementation="com.github.edxref.query.index.SQLQueryFileIndexer"/>-->
 <!--		<fileBasedIndex implementation="com.github.edxref.query.index.QueryUtilsUsageIndex"/>-->
