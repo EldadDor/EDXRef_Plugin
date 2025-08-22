@@ -40,7 +40,9 @@
 		<codeInsight.lineMarkerProvider language="XML"
 		                                implementationClass="com.github.edxref.query.gutter.XmlQueryLineMarkerProvider"/>-->
 
-		<gotoDeclarationHandler implementation="com.github.edxref.query.navigation.QueryGotoDeclarationHandler"/>
+        <gotoDeclarationHandler
+                implementation="com.github.edxref.query.ng.navigation.NGQueryGotoDeclarationHandler"
+                order="first"/>
 
         <fileBasedIndex implementation="com.github.edxref.query.ng.index.NGXmlQueryIndex"/>
         <fileBasedIndex implementation="com.github.edxref.query.ng.index.NGQueryUtilsIndex"/>

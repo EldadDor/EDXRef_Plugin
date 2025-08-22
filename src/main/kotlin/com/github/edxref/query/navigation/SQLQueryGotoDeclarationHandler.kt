@@ -34,8 +34,7 @@ class QueryGotoDeclarationHandler : GotoDeclarationHandler {
       log.debug("Project is in dumb mode.")
       return null // Cannot use index service during dumb mode
     }
-
-    val queryIndexService = QueryIndexService.getInstance(project)
+   val queryIndexService = QueryIndexService.getInstance(project)
     val settings = project.getQueryRefSettings()
 
     // --- 1. Extract Query ID based on source element type ---
