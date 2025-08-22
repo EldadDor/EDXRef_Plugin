@@ -2,7 +2,7 @@ package com.github.edxref.query.gutter
 
 // Import the specific class from the impl package (use with caution)
 import com.github.edxref.icons.EDXRefIcons
-import com.github.edxref.query.cache.QueryIndexService
+import com.github.edxref.query.cache.QueryIndexService2
 import com.intellij.codeInsight.daemon.LineMarkerInfo
 import com.intellij.codeInsight.daemon.LineMarkerProvider
 import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder
@@ -47,7 +47,7 @@ class XmlQueryLineMarkerProvider : LineMarkerProvider {
     }
 
     try {
-      val queryIndexService = QueryIndexService.getInstance(project)
+      val queryIndexService = QueryIndexService2.getInstance(project)
       val targetInterface = queryIndexService.findInterfaceById(queryId)
       val queryUtilsUsages = queryIndexService.findQueryUtilsUsagesById(queryId)
 
@@ -88,7 +88,7 @@ class XmlQueryLineMarkerProvider : LineMarkerProvider {
     }
 
     val project = elements.first().project
-    val queryIndexService = QueryIndexService.getInstance(project)
+    val queryIndexService = QueryIndexService2.getInstance(project)
 
     // Collect all query IDs from XML elements
     val queryIds = mutableSetOf<String>()

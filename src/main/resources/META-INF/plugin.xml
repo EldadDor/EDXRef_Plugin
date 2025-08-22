@@ -32,19 +32,30 @@
 
 	<extensions defaultExtensionNs="com.intellij">
 		<notificationGroup id="EDXRef Notifications" displayType="BALLOON" bundle="messages.MyBundle" key="notification.group.edxref.notifications"/>
-
+<!--
 		<codeInsight.lineMarkerProvider language="JAVA"
 		                                implementationClass="com.github.edxref.query.gutter.JavaQueryLineMarkerProvider"/>
 		<codeInsight.lineMarkerProvider language="JAVA"
 		                                implementationClass="com.github.edxref.query.gutter.MethodQueryUtilLineMarkerProvider"/>
 		<codeInsight.lineMarkerProvider language="XML"
-		                                implementationClass="com.github.edxref.query.gutter.XmlQueryLineMarkerProvider"/>
+		                                implementationClass="com.github.edxref.query.gutter.XmlQueryLineMarkerProvider"/>-->
 
 		<gotoDeclarationHandler implementation="com.github.edxref.query.navigation.QueryGotoDeclarationHandler"/>
 
-		<fileBasedIndex implementation="com.github.edxref.query.index.SQLQueryFileIndexer"/>
-		<fileBasedIndex implementation="com.github.edxref.query.index.QueryUtilsUsageIndex"/>
-		<fileBasedIndex implementation="com.github.edxref.query.index.SQLRefAnnotationIndex"/>
+        <fileBasedIndex implementation="com.github.edxref.query.ng.index.NGXmlQueryIndex"/>
+        <fileBasedIndex implementation="com.github.edxref.query.ng.index.NGQueryUtilsIndex"/>
+
+        <!-- New NG line markers -->
+        <codeInsight.lineMarkerProvider
+                language="XML"
+                implementationClass="com.github.edxref.query.ng.gutter.NGXmlQueryLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider
+                language="JAVA"
+                implementationClass="com.github.edxref.query.ng.gutter.NGQueryUtilsLineMarkerProvider"/>
+
+<!--		<fileBasedIndex implementation="com.github.edxref.query.index.SQLQueryFileIndexer"/>-->
+<!--		<fileBasedIndex implementation="com.github.edxref.query.index.QueryUtilsUsageIndex"/>-->
+<!--		<fileBasedIndex implementation="com.github.edxref.query.index.SQLRefAnnotationIndex"/>-->
 		<!--<projectService
 				serviceImplementation="com.github.edxref.query.cache.QueryIndexService" />-->
 		<localInspection
