@@ -4,11 +4,14 @@ import com.github.edxref.query.ng.index.NGQueryUtilsIndex
 import com.github.edxref.query.ng.index.NGSQLRefIndex
 import com.github.edxref.query.ng.index.NGXmlQueryIndex
 import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Computable
 import com.intellij.psi.*
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
@@ -22,6 +25,8 @@ class NGQueryService(private val project: Project) {
 
   companion object {
     private val log = logger<NGQueryService>()
+    // Limit runtime search to avoid hanging
+    private const val MAX_FILES_FOR_RUNTIME_SEARCH = 100
 
     fun getInstance(project: Project): NGQueryService =
       project.getService(NGQueryService::class.java)
@@ -32,13 +37,11 @@ class NGQueryService(private val project: Project) {
   private val queryUtilsCache = ConcurrentHashMap<String, List<PsiElement>>()
   private val sqlRefCache = ConcurrentHashMap<String, List<PsiElement>>()
 
-  /** Clear only the SQLRef cache */
   fun clearSQLRefCache() {
     sqlRefCache.clear()
     log.debug("SQLRef cache cleared")
   }
 
-  /** Cache a validated SQLRef annotation */
   fun cacheSQLRefAnnotation(refId: String, containingClass: PsiElement) {
     val existing = sqlRefCache[refId] ?: emptyList()
     if (!existing.contains(containingClass)) {
@@ -47,7 +50,6 @@ class NGQueryService(private val project: Project) {
     }
   }
 
-  /** Find XML tag by query ID */
   fun findXmlTagById(queryId: String): PsiElement? {
     // Check cache
     if (xmlCache.containsKey(queryId)) {
@@ -68,13 +70,12 @@ class NGQueryService(private val project: Project) {
       }
     }
 
-    // Fallback to runtime search
+    // Fallback to runtime search (limited scope)
     val result = findXmlTagByRuntimeSearch(queryId)
     xmlCache[queryId] = result
     return result
   }
 
-  /** Find SQLRef annotations by refId */
   fun findSQLRefAnnotations(refId: String): List<PsiElement> {
     // Check cache
     if (sqlRefCache.containsKey(refId)) {
@@ -95,13 +96,13 @@ class NGQueryService(private val project: Project) {
       }
     }
 
-    // Fallback to runtime search
-    val result = findSQLRefByRuntimeSearch(refId)
-    sqlRefCache[refId] = result
-    return result
+    // Skip runtime search for SQLRef if no index results
+    // Runtime search is too expensive for annotations
+    log.debug("No SQLRef found in index for: $refId, skipping runtime search")
+    sqlRefCache[refId] = emptyList()
+    return emptyList()
   }
 
-  /** Find QueryUtils usages by query ID */
   fun findQueryUtilsUsages(queryId: String): List<PsiElement> {
     // Check cache
     if (queryUtilsCache.containsKey(queryId)) {
@@ -122,10 +123,10 @@ class NGQueryService(private val project: Project) {
       }
     }
 
-    // Fallback to runtime search
-    val result = findQueryUtilsByRuntimeSearch(queryId)
-    queryUtilsCache[queryId] = result
-    return result
+    // Skip runtime search for QueryUtils if no index results
+    log.debug("No QueryUtils usage found in index for: $queryId, skipping runtime search")
+    queryUtilsCache[queryId] = emptyList()
+    return emptyList()
   }
 
   private fun findSQLRefFromIndex(refId: String): List<PsiElement> {
@@ -136,15 +137,26 @@ class NGQueryService(private val project: Project) {
       val filePaths =
         fileIndex.getValues(NGSQLRefIndex.KEY, refId, GlobalSearchScope.projectScope(project))
 
+      if (filePaths.isEmpty()) {
+        return emptyList()
+      }
+
       val settings = project.getQueryRefSettings()
       val targetAnnotationFqn = settings.sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
 
       for (filePath in filePaths) {
+        // Check for cancellation
+        ProgressManager.checkCanceled()
+
         val virtualFile =
           com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(filePath)
             ?: continue
+
         val psiFile =
-          PsiManager.getInstance(project).findFile(virtualFile) as? PsiJavaFile ?: continue
+          ApplicationManager.getApplication()
+            .runReadAction(
+              Computable { PsiManager.getInstance(project).findFile(virtualFile) as? PsiJavaFile }
+            ) ?: continue
 
         psiFile.accept(
           object : JavaRecursiveElementVisitor() {
@@ -182,7 +194,6 @@ class NGQueryService(private val project: Project) {
         )
       }
     } catch (e: ProcessCanceledException) {
-      // Rethrow ProcessCanceledException - never log it
       throw e
     } catch (e: Exception) {
       log.debug("Index lookup failed for SQLRef: $refId", e)
@@ -191,78 +202,23 @@ class NGQueryService(private val project: Project) {
     return results
   }
 
-  private fun findSQLRefByRuntimeSearch(refId: String): List<PsiElement> {
-    log.debug("Runtime search for SQLRef: $refId")
-    val results = mutableListOf<PsiElement>()
-
-    try {
-      val settings = project.getQueryRefSettings()
-      val targetAnnotationFqn = settings.sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
-
-      // Search in all Java files
-      val javaFiles = FilenameIndex.getAllFilesByExt(project, "java")
-
-      for (virtualFile in javaFiles) {
-        val psiFile =
-          PsiManager.getInstance(project).findFile(virtualFile) as? PsiJavaFile ?: continue
-
-        psiFile.accept(
-          object : JavaRecursiveElementVisitor() {
-            override fun visitAnnotation(annotation: PsiAnnotation) {
-              super.visitAnnotation(annotation)
-
-              // Try to match by qualified name if possible
-              val isMatch =
-                if (!DumbService.isDumb(project)) {
-                  annotation.qualifiedName == targetAnnotationFqn
-                } else {
-                  // Fallback to text matching in dumb mode
-                  annotation.text.contains("SQLRef")
-                }
-
-              if (isMatch) {
-                val refIdValue = extractRefIdValue(annotation)
-                if (refIdValue == refId) {
-                  val containingClass =
-                    PsiTreeUtil.getParentOfType(annotation, PsiClass::class.java)
-                  if (containingClass != null && !results.contains(containingClass)) {
-                    results.add(containingClass)
-                  }
-                }
-              }
-            }
-          }
-        )
-      }
-    } catch (e: ProcessCanceledException) {
-      // Rethrow ProcessCanceledException - never log it
-      throw e
-    } catch (e: Exception) {
-      // Only log non-control-flow exceptions
-      log.debug("Runtime search failed for SQLRef: $refId", e)
-    }
-
-    return results
-  }
+  // REMOVED: findSQLRefByRuntimeSearch - too expensive and causes hanging
 
   private fun extractRefIdValue(annotation: PsiAnnotation): String? {
     try {
       val settings = project.getQueryRefSettings()
       val attributeName = settings.sqlRefAnnotationAttributeName.ifBlank { "refId" }
 
-      // Try to get refId attribute value
       val refIdAttr = annotation.findAttributeValue(attributeName)
       if (refIdAttr is PsiLiteralExpression) {
         return refIdAttr.value as? String
       }
 
-      // If it's the default value (single value annotation)
       val defaultValue = annotation.findAttributeValue(null)
       if (defaultValue is PsiLiteralExpression) {
         return defaultValue.value as? String
       }
     } catch (e: ProcessCanceledException) {
-      // Rethrow ProcessCanceledException
       throw e
     } catch (e: Exception) {
       log.debug("Error extracting refId value", e)
@@ -278,10 +234,17 @@ class NGQueryService(private val project: Project) {
         fileIndex.getValues(NGXmlQueryIndex.KEY, queryId, GlobalSearchScope.projectScope(project))
 
       for (filePath in filePaths) {
+        ProgressManager.checkCanceled()
+
         val virtualFile =
           com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(filePath)
             ?: continue
-        val psiFile = PsiManager.getInstance(project).findFile(virtualFile) as? XmlFile ?: continue
+
+        val psiFile =
+          ApplicationManager.getApplication()
+            .runReadAction(
+              Computable { PsiManager.getInstance(project).findFile(virtualFile) as? XmlFile }
+            ) ?: continue
 
         val rootTag = psiFile.rootTag
         if (rootTag?.name == "Queries") {
@@ -294,7 +257,6 @@ class NGQueryService(private val project: Project) {
         }
       }
     } catch (e: ProcessCanceledException) {
-      // Rethrow ProcessCanceledException
       throw e
     } catch (e: Exception) {
       log.debug("Index lookup failed for XML: $queryId", e)
@@ -306,11 +268,26 @@ class NGQueryService(private val project: Project) {
     log.debug("Runtime search for XML query: $queryId")
 
     try {
+      // Limited scope - only search for -queries.xml files
+      val scope = GlobalSearchScope.projectScope(project)
       val xmlFiles =
-        FilenameIndex.getAllFilesByExt(project, "xml").filter { it.name.endsWith("-queries.xml") }
+        ApplicationManager.getApplication()
+          .runReadAction(
+            Computable {
+              FilenameIndex.getAllFilesByExt(project, "xml", scope)
+                .filter { it.name.endsWith("-queries.xml") }
+                .take(MAX_FILES_FOR_RUNTIME_SEARCH) // Limit files to prevent hanging
+            }
+          )
 
       for (virtualFile in xmlFiles) {
-        val psiFile = PsiManager.getInstance(project).findFile(virtualFile) as? XmlFile ?: continue
+        ProgressManager.checkCanceled()
+
+        val psiFile =
+          ApplicationManager.getApplication()
+            .runReadAction(
+              Computable { PsiManager.getInstance(project).findFile(virtualFile) as? XmlFile }
+            ) ?: continue
 
         val rootTag = psiFile.rootTag
         if (rootTag?.name == "Queries") {
@@ -323,10 +300,8 @@ class NGQueryService(private val project: Project) {
         }
       }
     } catch (e: ProcessCanceledException) {
-      // Rethrow ProcessCanceledException
       throw e
     } catch (e: Exception) {
-      // Only log non-control-flow exceptions
       log.debug("Runtime search failed for XML: $queryId", e)
     }
 
@@ -342,11 +317,17 @@ class NGQueryService(private val project: Project) {
         fileIndex.getValues(NGQueryUtilsIndex.KEY, queryId, GlobalSearchScope.projectScope(project))
 
       for (filePath in filePaths) {
+        ProgressManager.checkCanceled()
+
         val virtualFile =
           com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(filePath)
             ?: continue
+
         val psiFile =
-          PsiManager.getInstance(project).findFile(virtualFile) as? PsiJavaFile ?: continue
+          ApplicationManager.getApplication()
+            .runReadAction(
+              Computable { PsiManager.getInstance(project).findFile(virtualFile) as? PsiJavaFile }
+            ) ?: continue
 
         psiFile.accept(
           object : JavaRecursiveElementVisitor() {
@@ -368,7 +349,6 @@ class NGQueryService(private val project: Project) {
         )
       }
     } catch (e: ProcessCanceledException) {
-      // Rethrow ProcessCanceledException
       throw e
     } catch (e: Exception) {
       log.debug("Index lookup failed for QueryUtils: $queryId", e)
@@ -377,49 +357,7 @@ class NGQueryService(private val project: Project) {
     return results
   }
 
-  private fun findQueryUtilsByRuntimeSearch(queryId: String): List<PsiElement> {
-    log.debug("Runtime search for QueryUtils usage: $queryId")
-    val results = mutableListOf<PsiElement>()
-
-    try {
-      val javaFiles = FilenameIndex.getAllFilesByExt(project, "java")
-
-      for (virtualFile in javaFiles) {
-        val psiFile =
-          PsiManager.getInstance(project).findFile(virtualFile) as? PsiJavaFile ?: continue
-
-        psiFile.accept(
-          object : JavaRecursiveElementVisitor() {
-            override fun visitMethodCallExpression(call: PsiMethodCallExpression) {
-              super.visitMethodCallExpression(call)
-
-              val methodExpr = call.methodExpression
-              if (methodExpr.referenceName == "getQuery") {
-                val qualifierText = methodExpr.qualifierExpression?.text?.lowercase()
-                if (qualifierText?.contains("queryutils") == true) {
-                  val args = call.argumentList.expressions
-                  if (args.isNotEmpty() && args[0] is PsiLiteralExpression) {
-                    val literal = args[0] as PsiLiteralExpression
-                    if (literal.value == queryId) {
-                      results.add(call)
-                    }
-                  }
-                }
-              }
-            }
-          }
-        )
-      }
-    } catch (e: ProcessCanceledException) {
-      // Rethrow ProcessCanceledException
-      throw e
-    } catch (e: Exception) {
-      // Only log non-control-flow exceptions
-      log.debug("Runtime search failed for QueryUtils: $queryId", e)
-    }
-
-    return results
-  }
+  // REMOVED: findQueryUtilsByRuntimeSearch - rely on index only
 
   fun clearCache() {
     xmlCache.clear()
