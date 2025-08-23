@@ -11,19 +11,17 @@ import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.util.Computable
 import com.intellij.psi.*
-import com.intellij.psi.xml.XmlAttribute
-import com.intellij.psi.xml.XmlAttributeValue
-import com.intellij.psi.xml.XmlTag
-import com.intellij.psi.xml.XmlToken
+import com.intellij.psi.xml.*
 
-/** Line marker for XML query definitions - now includes SQLRef annotations */
 class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
 
   private val log = logger<NGXmlQueryLineMarkerProvider>()
 
   override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
-    // Fast path for simple cases
-    if (element !is XmlToken) return null
+    // Only process XML_ATTRIBUTE_VALUE_TOKEN tokens
+    if (element !is XmlToken || element.tokenType != XmlTokenType.XML_ATTRIBUTE_VALUE_TOKEN) {
+      return null
+    }
 
     try {
       val attributeValue = element.parent as? XmlAttributeValue ?: return null
@@ -33,7 +31,6 @@ class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
       if (attribute.name == "id" && tag.name == "query") {
         val queryId = attributeValue.value
         if (queryId.isNotBlank()) {
-          // Quick check - if we have cached results, show immediately
           val service = NGQueryService.getInstance(element.project)
 
           // Use read action for thread safety
@@ -41,17 +38,29 @@ class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
             ApplicationManager.getApplication()
               .runReadAction(
                 Computable {
-                  val allTargets = mutableListOf<PsiElement>()
-                  allTargets.addAll(service.findQueryUtilsUsages(queryId))
-                  allTargets.addAll(service.findSQLRefAnnotations(queryId))
-                  allTargets.filter { it.isValid }
+                  val allTargets = mutableSetOf<PsiElement>() // Use Set to prevent duplicates
+
+                  // Add QueryUtils usages
+                  val queryUtilsUsages = service.findQueryUtilsUsages(queryId)
+                  allTargets.addAll(queryUtilsUsages)
+
+                  // Add SQLRef annotations
+                  val sqlRefAnnotations = service.findSQLRefAnnotations(queryId)
+                  allTargets.addAll(sqlRefAnnotations)
+
+                  // Filter valid and return as list
+                  allTargets.filter { it.isValid }.toList()
                 }
               )
 
           if (targets.isNotEmpty()) {
+            log.debug(
+              "Creating line marker for queryId: $queryId with ${targets.size} unique targets"
+            )
+
             return NavigationGutterIconBuilder.create(EDXRefIcons.XML_TO_JAVA)
               .setTargets(targets)
-              .setTooltipText("Navigate to QueryUtils usages and SQLRef annotations")
+              .setTooltipText("Navigate to ${targets.size} usage(s)")
               .setAlignment(GutterIconRenderer.Alignment.LEFT)
               .createLineMarkerInfo(element)
           }
@@ -70,7 +79,6 @@ class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
     elements: List<PsiElement>,
     result: MutableCollection<in LineMarkerInfo<*>>,
   ) {
-    // We're handling everything in getLineMarkerInfo for better responsiveness
-    // This method can be used for batch operations if needed
+    // Empty - we handle everything in getLineMarkerInfo for better responsiveness
   }
 }

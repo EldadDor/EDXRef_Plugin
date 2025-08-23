@@ -25,6 +25,7 @@ class NGQueryService(private val project: Project) {
 
   companion object {
     private val log = logger<NGQueryService>()
+
     // Limit runtime search to avoid hanging
     private const val MAX_FILES_FOR_RUNTIME_SEARCH = 100
 
@@ -91,13 +92,14 @@ class NGQueryService(private val project: Project) {
     if (!DumbService.isDumb(project)) {
       val result = findSQLRefFromIndex(refId)
       if (result.isNotEmpty()) {
-        sqlRefCache[refId] = result
-        return result
+        // Remove duplicates before caching
+        val uniqueResults = result.distinct()
+        sqlRefCache[refId] = uniqueResults
+        return uniqueResults
       }
     }
 
     // Skip runtime search for SQLRef if no index results
-    // Runtime search is too expensive for annotations
     log.debug("No SQLRef found in index for: $refId, skipping runtime search")
     sqlRefCache[refId] = emptyList()
     return emptyList()
@@ -118,8 +120,10 @@ class NGQueryService(private val project: Project) {
     if (!DumbService.isDumb(project)) {
       val result = findQueryUtilsFromIndex(queryId)
       if (result.isNotEmpty()) {
-        queryUtilsCache[queryId] = result
-        return result
+        // Remove duplicates before caching
+        val uniqueResults = result.distinct()
+        queryUtilsCache[queryId] = uniqueResults
+        return uniqueResults
       }
     }
 
@@ -130,7 +134,8 @@ class NGQueryService(private val project: Project) {
   }
 
   private fun findSQLRefFromIndex(refId: String): List<PsiElement> {
-    val results = mutableListOf<PsiElement>()
+    // Use a Set to automatically prevent duplicates
+    val results = mutableSetOf<PsiElement>()
 
     try {
       val fileIndex = FileBasedIndex.getInstance()
@@ -170,8 +175,8 @@ class NGQueryService(private val project: Project) {
                   if (refIdValue == refId) {
                     val containingClass =
                       PsiTreeUtil.getParentOfType(annotation, PsiClass::class.java)
-                    if (containingClass != null && !results.contains(containingClass)) {
-                      results.add(containingClass)
+                    if (containingClass != null) {
+                      results.add(containingClass) // Set prevents duplicates
                     }
                   }
                 }
@@ -183,8 +188,8 @@ class NGQueryService(private val project: Project) {
                   if (refIdValue == refId) {
                     val containingClass =
                       PsiTreeUtil.getParentOfType(annotation, PsiClass::class.java)
-                    if (containingClass != null && !results.contains(containingClass)) {
-                      results.add(containingClass)
+                    if (containingClass != null) {
+                      results.add(containingClass) // Set prevents duplicates
                     }
                   }
                 }
@@ -199,7 +204,7 @@ class NGQueryService(private val project: Project) {
       log.debug("Index lookup failed for SQLRef: $refId", e)
     }
 
-    return results
+    return results.toList()
   }
 
   // REMOVED: findSQLRefByRuntimeSearch - too expensive and causes hanging
@@ -309,7 +314,8 @@ class NGQueryService(private val project: Project) {
   }
 
   private fun findQueryUtilsFromIndex(queryId: String): List<PsiElement> {
-    val results = mutableListOf<PsiElement>()
+    // Use a Set to automatically prevent duplicates
+    val results = mutableSetOf<PsiElement>()
 
     try {
       val fileIndex = FileBasedIndex.getInstance()
@@ -340,7 +346,7 @@ class NGQueryService(private val project: Project) {
                 if (args.isNotEmpty() && args[0] is PsiLiteralExpression) {
                   val literal = args[0] as PsiLiteralExpression
                   if (literal.value == queryId) {
-                    results.add(call)
+                    results.add(call) // Set prevents duplicates
                   }
                 }
               }
@@ -354,7 +360,7 @@ class NGQueryService(private val project: Project) {
       log.debug("Index lookup failed for QueryUtils: $queryId", e)
     }
 
-    return results
+    return results.toList()
   }
 
   // REMOVED: findQueryUtilsByRuntimeSearch - rely on index only
