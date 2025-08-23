@@ -8,7 +8,6 @@ import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.psi.*
-import com.intellij.psi.util.PsiTreeUtil
 
 /** Line marker for @SQLRef annotations */
 class NGSQLRefLineMarkerProvider : LineMarkerProvider {
@@ -16,7 +15,39 @@ class NGSQLRefLineMarkerProvider : LineMarkerProvider {
   private val log = logger<NGSQLRefLineMarkerProvider>()
 
   override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
-    // We'll use collectSlowLineMarkers for everything
+    // IMPORTANT: Only process leaf elements (PsiIdentifier for annotation name)
+    if (element !is PsiIdentifier) return null
+
+    try {
+      // Check if this identifier is part of an annotation
+      val parent = element.parent
+      if (parent !is PsiJavaCodeReferenceElement) return null
+
+      val annotation = parent.parent as? PsiAnnotation ?: return null
+
+      // Check if this is the annotation name identifier (not an attribute name)
+      if (annotation.nameReferenceElement?.referenceNameElement != element) return null
+
+      val qualifiedName = annotation.qualifiedName
+      if (qualifiedName?.endsWith("SQLRef") == true) {
+        val refId = extractRefIdValue(annotation)
+        if (!refId.isNullOrBlank()) {
+          val service = NGQueryService.getInstance(element.project)
+          val xmlTag = service.findXmlTagById(refId)
+
+          if (xmlTag != null) {
+            return NavigationGutterIconBuilder.create(EDXRefIcons.JAVA_TO_XML)
+              .setTargets(xmlTag)
+              .setTooltipText("Navigate to Query XML definition")
+              .setAlignment(GutterIconRenderer.Alignment.LEFT)
+              .createLineMarkerInfo(element) // element is now a leaf (PsiIdentifier)
+          }
+        }
+      }
+    } catch (e: Exception) {
+      log.debug("Error processing element", e)
+    }
+
     return null
   }
 
@@ -24,42 +55,7 @@ class NGSQLRefLineMarkerProvider : LineMarkerProvider {
     elements: List<PsiElement>,
     result: MutableCollection<in LineMarkerInfo<*>>,
   ) {
-    if (elements.isEmpty()) return
-
-    val service = NGQueryService.getInstance(elements.first().project)
-
-    for (element in elements) {
-      try {
-        // Look for annotation identifiers
-        if (element is PsiIdentifier) {
-          val annotation = PsiTreeUtil.getParentOfType(element, PsiAnnotation::class.java)
-          if (annotation != null) {
-            val qualifiedName = annotation.qualifiedName
-            if (qualifiedName?.endsWith("SQLRef") == true) {
-              // Make sure we're on the annotation name, not an attribute
-              if (annotation.nameReferenceElement?.referenceName == element.text) {
-                val refId = extractRefIdValue(annotation)
-                if (!refId.isNullOrBlank()) {
-                  val xmlTag = service.findXmlTagById(refId)
-
-                  if (xmlTag != null) {
-                    val builder =
-                      NavigationGutterIconBuilder.create(EDXRefIcons.JAVA_TO_XML)
-                        .setTargets(xmlTag)
-                        .setTooltipText("Navigate to Query XML definition")
-                        .setAlignment(GutterIconRenderer.Alignment.LEFT)
-
-                    result.add(builder.createLineMarkerInfo(element))
-                  }
-                }
-              }
-            }
-          }
-        }
-      } catch (e: Exception) {
-        log.debug("Error processing element", e)
-      }
-    }
+    // Empty - we handle everything in getLineMarkerInfo
   }
 
   private fun extractRefIdValue(annotation: PsiAnnotation): String? {
