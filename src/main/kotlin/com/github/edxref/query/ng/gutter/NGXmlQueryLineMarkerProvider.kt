@@ -9,16 +9,30 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.util.NotNullLazyValue
 import com.intellij.psi.*
 import com.intellij.psi.xml.*
+import java.util.concurrent.ConcurrentHashMap
 
+/** Optimized line marker provider with lazy target computation using NotNullLazyValue */
 class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
 
-  private val log = logger<NGXmlQueryLineMarkerProvider>()
+  companion object {
+    private val log = logger<NGXmlQueryLineMarkerProvider>()
+
+    // Cache to avoid repeated computations during the same session
+    private val markerCache = ConcurrentHashMap<String, Boolean>()
+  }
 
   override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
-    // Only process XML_ATTRIBUTE_VALUE_TOKEN tokens
+    // Fast path: Skip during indexing
+    if (DumbService.isDumb(element.project)) {
+      return null
+    }
+
+    // Only process the right token type
     if (element !is XmlToken || element.tokenType != XmlTokenType.XML_ATTRIBUTE_VALUE_TOKEN) {
       return null
     }
@@ -26,46 +40,24 @@ class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
     try {
       val attributeValue = element.parent as? XmlAttributeValue ?: return null
       val attribute = attributeValue.parent as? XmlAttribute ?: return null
+
+      // Quick check without accessing tag
+      if (attribute.name != "id") return null
+
       val tag = attribute.parent as? XmlTag ?: return null
+      if (tag.name != "query") return null
 
-      if (attribute.name == "id" && tag.name == "query") {
-        val queryId = attributeValue.value
-        if (queryId.isNotBlank()) {
-          val service = NGQueryService.getInstance(element.project)
+      val queryId = attributeValue.value
+      if (queryId.isBlank()) return null
 
-          // Use read action for thread safety
-          val targets =
-            ApplicationManager.getApplication()
-              .runReadAction(
-                Computable {
-                  val allTargets = mutableSetOf<PsiElement>() // Use Set to prevent duplicates
-
-                  // Add QueryUtils usages
-                  val queryUtilsUsages = service.findQueryUtilsUsages(queryId)
-                  allTargets.addAll(queryUtilsUsages)
-
-                  // Add SQLRef annotations
-                  val sqlRefAnnotations = service.findSQLRefAnnotations(queryId)
-                  allTargets.addAll(sqlRefAnnotations)
-
-                  // Filter valid and return as list
-                  allTargets.filter { it.isValid }.toList()
-                }
-              )
-
-          if (targets.isNotEmpty()) {
-            log.debug(
-              "Creating line marker for queryId: $queryId with ${targets.size} unique targets"
-            )
-
-            return NavigationGutterIconBuilder.create(EDXRefIcons.XML_TO_JAVA)
-              .setTargets(targets)
-              .setTooltipText("Navigate to ${targets.size} usage(s)")
-              .setAlignment(GutterIconRenderer.Alignment.LEFT)
-              .createLineMarkerInfo(element)
-          }
-        }
+      // Check cache first to avoid expensive operations
+      val cacheKey = "${element.project.locationHash}_$queryId"
+      if (markerCache[cacheKey] == false) {
+        return null // We already know there are no targets
       }
+
+      // Create a lazy navigation handler using NotNullLazyValue
+      return createLazyLineMarker(element, queryId, cacheKey)
     } catch (e: ProcessCanceledException) {
       throw e
     } catch (e: Exception) {
@@ -73,6 +65,50 @@ class NGXmlQueryLineMarkerProvider : LineMarkerProvider {
     }
 
     return null
+  }
+
+  private fun createLazyLineMarker(
+    element: PsiElement,
+    queryId: String,
+    cacheKey: String,
+  ): LineMarkerInfo<*> {
+    // Create a NotNullLazyValue with explicit Collection<PsiElement> type
+    val lazyTargets: NotNullLazyValue<Collection<PsiElement>> =
+      NotNullLazyValue.createValue {
+        // This block is only executed when the user actually clicks the icon
+        ApplicationManager.getApplication()
+          .runReadAction(
+            Computable<Collection<PsiElement>> {
+              val service = NGQueryService.getInstance(element.project)
+              val allTargets =
+                mutableListOf<PsiElement>() // Use mutableListOf instead of mutableSetOf
+
+              try {
+                allTargets.addAll(service.findQueryUtilsUsages(queryId))
+                allTargets.addAll(service.findSQLRefAnnotations(queryId))
+
+                val validTargets = allTargets.filter { it.isValid }
+
+                // Update cache
+                markerCache[cacheKey] = validTargets.isNotEmpty()
+
+                log.debug("Lazy loaded ${validTargets.size} targets for queryId: $queryId")
+                validTargets as Collection<PsiElement> // Explicit cast to ensure type
+              } catch (e: Exception) {
+                log.debug("Error loading targets for queryId: $queryId", e)
+                emptyList<PsiElement>() as Collection<PsiElement>
+              }
+            }
+          )
+      }
+
+    val builder =
+      NavigationGutterIconBuilder.create(EDXRefIcons.XML_TO_JAVA)
+        .setAlignment(GutterIconRenderer.Alignment.LEFT)
+        .setTooltipText("Navigate to usages")
+        .setTargets(lazyTargets) // This should now work with proper typing
+
+    return builder.createLineMarkerInfo(element)
   }
 
   override fun collectSlowLineMarkers(
