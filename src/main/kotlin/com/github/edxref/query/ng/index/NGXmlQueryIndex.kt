@@ -1,22 +1,15 @@
 package com.github.edxref.query.ng.index
 
-/*
- * User: eadno1
- * Date: 21/08/2025
- *
- * Copyright (2005) IDI. All rights reserved.
- * This software is a proprietary information of Israeli Direct Insurance.
- * Created by IntelliJ IDEA.
- */
-
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.xml.XmlFile
 import com.intellij.util.indexing.*
 import com.intellij.util.io.EnumeratorStringDescriptor
 import com.intellij.util.io.KeyDescriptor
 
-/** Simple index for XML query files Maps: queryId -> file path */
+/** Optimized index for XML query files Maps: queryId -> file path */
 class NGXmlQueryIndex : FileBasedIndexExtension<String, String>() {
 
   companion object {
@@ -30,7 +23,7 @@ class NGXmlQueryIndex : FileBasedIndexExtension<String, String>() {
 
   override fun getValueExternalizer() = EnumeratorStringDescriptor.INSTANCE
 
-  override fun getVersion(): Int = 1
+  override fun getVersion(): Int = 2
 
   override fun dependsOnFileContent(): Boolean = true
 
@@ -47,20 +40,33 @@ class NGXmlQueryIndex : FileBasedIndexExtension<String, String>() {
       val map = mutableMapOf<String, String>()
 
       try {
+        // Quick text check first
+        val content = inputData.contentAsText.toString()
+        if (!content.contains("<query") || !content.contains("id=")) {
+          return@DataIndexer emptyMap()
+        }
+
         val psiFile = inputData.psiFile as? XmlFile ?: return@DataIndexer emptyMap()
         val rootTag = psiFile.rootTag
 
         if (rootTag?.name == "Queries") {
-          rootTag.findSubTags("query").forEach { tag ->
-            val queryId = tag.getAttributeValue("id")
+          val queryTags = rootTag.findSubTags("query")
+          for (queryTag in queryTags) {
+            val queryId = queryTag.getAttributeValue("id")
             if (!queryId.isNullOrBlank()) {
               map[queryId] = inputData.file.path
-              log.debug("Indexed query: $queryId -> ${inputData.file.path}")
+              if (log.isDebugEnabled) {
+                log.debug("Indexed query: $queryId -> ${inputData.file.path}")
+              }
             }
           }
         }
+      } catch (e: ProcessCanceledException) {
+        throw e
+      } catch (e: ReadAction.CannotReadException) {
+        throw e
       } catch (e: Exception) {
-        log.error("Error indexing ${inputData.file.path}", e)
+        log.debug("Error indexing ${inputData.file.path}: ${e.message}")
       }
 
       map

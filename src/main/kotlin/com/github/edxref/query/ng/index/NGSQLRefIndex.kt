@@ -1,16 +1,15 @@
 package com.github.edxref.query.ng.index
 
-import com.github.edxref.query.settings.QueryRefSettings.Companion.getQueryRefSettings
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.psi.JavaRecursiveElementVisitor
-import com.intellij.psi.PsiAnnotation
-import com.intellij.psi.PsiJavaFile
-import com.intellij.psi.PsiLiteralExpression
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.*
 import com.intellij.util.indexing.*
 import com.intellij.util.io.EnumeratorStringDescriptor
 import com.intellij.util.io.KeyDescriptor
 
-/** Index for @SQLRef annotations using lightweight PSI Maps: refId value -> file path */
+/** Optimized index for @SQLRef annotations Maps: refId value -> file path */
 class NGSQLRefIndex : FileBasedIndexExtension<String, String>() {
 
   companion object {
@@ -24,12 +23,22 @@ class NGSQLRefIndex : FileBasedIndexExtension<String, String>() {
 
   override fun getValueExternalizer() = EnumeratorStringDescriptor.INSTANCE
 
-  override fun getVersion(): Int = 3
+  override fun getVersion(): Int = 4 // Incremented for the fix
 
   override fun dependsOnFileContent(): Boolean = true
 
   override fun getInputFilter(): FileBasedIndex.InputFilter {
-    return DefaultFileTypeSpecificInputFilter(com.intellij.ide.highlighter.JavaFileType.INSTANCE)
+    return object :
+      DefaultFileTypeSpecificInputFilter(com.intellij.ide.highlighter.JavaFileType.INSTANCE) {
+      override fun acceptInput(file: VirtualFile): Boolean {
+        // Additional filtering to improve performance
+        return super.acceptInput(file) &&
+          file.name.endsWith(".java") &&
+          !file.path.contains("/test/") && // Skip test files for better performance
+          !file.path.contains("/.gradle/") && // Skip gradle cache
+          !file.path.contains("/.m2/") // Skip maven cache
+      }
+    }
   }
 
   override fun getIndexer(): DataIndexer<String, String, FileContent> {
@@ -37,124 +46,129 @@ class NGSQLRefIndex : FileBasedIndexExtension<String, String>() {
       val map = mutableMapOf<String, String>()
 
       try {
+        // Quick text-based pre-check to avoid expensive PSI parsing
+        val content = inputData.contentAsText.toString()
+        if (!content.contains("SQLRef")) {
+          return@DataIndexer emptyMap()
+        }
+
+        // Only parse PSI if the file likely contains SQLRef annotations
         val psiFile = inputData.psiFile as? PsiJavaFile ?: return@DataIndexer emptyMap()
 
-        // Get settings - this is safe during indexing as it's just reading configuration
-        val project = psiFile.project
-        val settings = project.getQueryRefSettings()
-        val targetAnnotationFqn =
-          settings.sqlRefAnnotationFqn.ifBlank { "com.github.edxref.SQLRef" }
-        val attributeName = settings.sqlRefAnnotationAttributeName.ifBlank { "refId" }
-
-        // Extract just the simple name for quick filtering
-        val simpleAnnotationName = targetAnnotationFqn.substringAfterLast('.')
-
-        psiFile.accept(
-          object : JavaRecursiveElementVisitor() {
-            override fun visitAnnotation(annotation: PsiAnnotation) {
-              super.visitAnnotation(annotation)
-
-              // First, quick check using the name reference element (doesn't require resolution)
-              val nameElement = annotation.nameReferenceElement
-              if (nameElement != null) {
-                val referenceName = nameElement.referenceName
-
-                // Quick filter by simple name
-                if (referenceName == simpleAnnotationName || referenceName == targetAnnotationFqn) {
-                  // Now check if this could be our annotation
-                  if (
-                    isPotentiallySQLRefAnnotation(
-                      annotation,
-                      simpleAnnotationName,
-                      targetAnnotationFqn,
-                    )
-                  ) {
-                    // Extract refId value without resolution
-                    val refIdValue = extractRefIdValueSafely(annotation, attributeName)
-                    if (!refIdValue.isNullOrBlank()) {
-                      map[refIdValue] = inputData.file.path
-                      log.debug("Indexed SQLRef: $refIdValue -> ${inputData.file.path}")
-                    }
-                  }
-                }
-              }
-            }
-          }
-        )
+        // Use a more efficient visitor that stops early
+        psiFile.accept(OptimizedSQLRefVisitor(map, inputData.file.path))
+      } catch (e: ProcessCanceledException) {
+        // Always rethrow ProcessCanceledException
+        throw e
+      } catch (e: ReadAction.CannotReadException) {
+        // Always rethrow ReadAction exceptions - never log them
+        throw e
       } catch (e: Exception) {
-        log.error("Error indexing ${inputData.file.path}", e)
+        // Only log non-control-flow exceptions
+        log.debug("Error indexing ${inputData.file.path}: ${e.message}")
       }
 
       map
     }
   }
 
-  /** Check if annotation could be SQLRef without resolving references */
-  private fun isPotentiallySQLRefAnnotation(
-    annotation: PsiAnnotation,
-    simpleAnnotationName: String,
-    targetAnnotationFqn: String,
-  ): Boolean {
-    val nameElement = annotation.nameReferenceElement ?: return false
-    val referenceName = nameElement.referenceName ?: return false
+  /** Optimized visitor that processes annotations efficiently */
+  private class OptimizedSQLRefVisitor(
+    private val resultMap: MutableMap<String, String>,
+    private val filePath: String,
+  ) : JavaRecursiveElementVisitor() {
 
-    // Check simple name match
-    if (referenceName == simpleAnnotationName) {
-      // Check if it might be the right package by looking at imports
-      val containingFile = annotation.containingFile as? PsiJavaFile
-      if (containingFile != null) {
-        // Check imports without resolution
-        val importList = containingFile.importList
-        if (importList != null) {
-          for (importStatement in importList.importStatements) {
-            val importText = importStatement.text
-            if (importText.contains(targetAnnotationFqn)) {
-              return true
+    private var foundAnnotations = 0
+    private val maxAnnotationsPerFile = 50 // Limit to prevent runaway processing
+
+    override fun visitClass(aClass: PsiClass) {
+      // Only visit class-level annotations, skip method/field level for performance
+      aClass.modifierList?.let { modifierList -> visitModifierList(modifierList) }
+
+      // Don't recurse into inner classes if we've found enough annotations
+      if (foundAnnotations < maxAnnotationsPerFile) {
+        super.visitClass(aClass)
+      }
+    }
+
+    override fun visitMethod(method: PsiMethod) {
+      // Visit method-level annotations
+      method.modifierList?.let { modifierList -> visitModifierList(modifierList) }
+
+      // Don't recurse into method body - annotations are only in modifier lists
+    }
+
+    override fun visitField(field: PsiField) {
+      // Visit field-level annotations
+      field.modifierList?.let { modifierList -> visitModifierList(modifierList) }
+    }
+
+    override fun visitAnnotation(annotation: PsiAnnotation) {
+      try {
+        // Quick text-based check first (no resolution needed)
+        val annotationText = annotation.text
+        if (annotationText.contains("SQLRef")) {
+
+          // Extract refId without expensive resolution
+          val refIdValue = extractRefIdValueFast(annotation)
+          if (!refIdValue.isNullOrBlank()) {
+            resultMap[refIdValue] = filePath
+            foundAnnotations++
+
+            if (log.isDebugEnabled) {
+              log.debug("Indexed SQLRef: $refIdValue -> $filePath")
+            }
+
+            // Stop processing if we've found too many (prevents runaway processing)
+            if (foundAnnotations >= maxAnnotationsPerFile) {
+              return
             }
           }
         }
-
-        // Check if it's in the same package
-        val packageName = containingFile.packageName
-        val annotationPackage = targetAnnotationFqn.substringBeforeLast('.')
-        if (packageName == annotationPackage) {
-          return true
+      } catch (e: ProcessCanceledException) {
+        throw e
+      } catch (e: ReadAction.CannotReadException) {
+        throw e
+      } catch (e: Exception) {
+        // Ignore individual annotation processing errors
+        if (log.isTraceEnabled) {
+          log.trace("Error processing annotation: ${e.message}")
         }
       }
 
-      // If we can't determine, index it anyway (will be filtered later during usage)
-      return true
+      // Don't call super.visitAnnotation() to avoid unnecessary recursion
     }
 
-    // Check fully qualified name
-    return referenceName == targetAnnotationFqn
-  }
+    /** Fast refId extraction without expensive PSI resolution */
+    private fun extractRefIdValueFast(annotation: PsiAnnotation): String? {
+      try {
+        // Get the parameter list without triggering resolution
+        val parameterList = annotation.parameterList
+        val attributes = parameterList.attributes
 
-  /** Extract refId value without triggering resolution */
-  private fun extractRefIdValueSafely(annotation: PsiAnnotation, attributeName: String): String? {
-    try {
-      // Get the parameter list
-      val parameterList = annotation.parameterList
-      val attributes = parameterList.attributes
+        for (attribute in attributes) {
+          val attrName = attribute.name
 
-      for (attribute in attributes) {
-        val attrName = attribute.name
-
-        // Check for matching attribute name or default value
-        if (attrName == attributeName || attrName == null) {
-          val value = attribute.value
-          if (value is PsiLiteralExpression) {
-            val literalValue = value.value
-            if (literalValue is String) {
-              return literalValue
+          // Check for refId attribute or default value
+          if (attrName == "refId" || attrName == null) {
+            val value = attribute.value
+            if (value is PsiLiteralExpression) {
+              val literalValue = value.value
+              if (literalValue is String && literalValue.isNotBlank()) {
+                return literalValue
+              }
             }
           }
         }
+      } catch (e: ProcessCanceledException) {
+        throw e
+      } catch (e: ReadAction.CannotReadException) {
+        throw e
+      } catch (e: Exception) {
+        // Return null on any parsing error
       }
-    } catch (e: Exception) {
-      log.debug("Error extracting refId value", e)
-    }
 
-    return null
+      return null
+    }
   }
 }

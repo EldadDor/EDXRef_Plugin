@@ -1,21 +1,15 @@
 package com.github.edxref.query.ng.index
 
-import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.psi.JavaRecursiveElementVisitor
-import com.intellij.psi.PsiJavaFile
-import com.intellij.psi.PsiLiteralExpression
-import com.intellij.psi.PsiMethodCallExpression
-import com.intellij.util.indexing.DataIndexer
-import com.intellij.util.indexing.DefaultFileTypeSpecificInputFilter
-import com.intellij.util.indexing.FileBasedIndex
-import com.intellij.util.indexing.FileBasedIndexExtension
-import com.intellij.util.indexing.FileContent
-import com.intellij.util.indexing.ID
+import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.*
+import com.intellij.util.indexing.*
 import com.intellij.util.io.EnumeratorStringDescriptor
 import com.intellij.util.io.KeyDescriptor
 
-/** Simple index for QueryUtils.getQuery() calls Maps: queryId -> file path */
+/** Optimized index for QueryUtils.getQuery() calls Maps: queryId -> file path */
 class NGQueryUtilsIndex : FileBasedIndexExtension<String, String>() {
 
   companion object {
@@ -29,12 +23,21 @@ class NGQueryUtilsIndex : FileBasedIndexExtension<String, String>() {
 
   override fun getValueExternalizer() = EnumeratorStringDescriptor.INSTANCE
 
-  override fun getVersion(): Int = 1
+  override fun getVersion(): Int = 3 // Incremented for the fix
 
   override fun dependsOnFileContent(): Boolean = true
 
   override fun getInputFilter(): FileBasedIndex.InputFilter {
-    return DefaultFileTypeSpecificInputFilter(JavaFileType.INSTANCE)
+    return object :
+      DefaultFileTypeSpecificInputFilter(com.intellij.ide.highlighter.JavaFileType.INSTANCE) {
+      override fun acceptInput(file: VirtualFile): Boolean {
+        return super.acceptInput(file) &&
+          file.name.endsWith(".java") &&
+          !file.path.contains("/test/") &&
+          !file.path.contains("/.gradle/") &&
+          !file.path.contains("/.m2/")
+      }
+    }
   }
 
   override fun getIndexer(): DataIndexer<String, String, FileContent> {
@@ -42,40 +45,77 @@ class NGQueryUtilsIndex : FileBasedIndexExtension<String, String>() {
       val map = mutableMapOf<String, String>()
 
       try {
+        // Quick text-based pre-check
+        val content = inputData.contentAsText.toString()
+        if (!content.contains("getQuery") || !content.contains("queryUtils")) {
+          return@DataIndexer emptyMap()
+        }
+
         val psiFile = inputData.psiFile as? PsiJavaFile ?: return@DataIndexer emptyMap()
 
-        psiFile.accept(
-          object : JavaRecursiveElementVisitor() {
-            override fun visitMethodCallExpression(call: PsiMethodCallExpression) {
-              super.visitMethodCallExpression(call)
+        psiFile.accept(OptimizedQueryUtilsVisitor(map, inputData.file.path))
+      } catch (e: ProcessCanceledException) {
+        throw e
+      } catch (e: ReadAction.CannotReadException) {
+        throw e
+      } catch (e: Exception) {
+        log.debug("Error indexing ${inputData.file.path}: ${e.message}")
+      }
 
-              val methodExpr = call.methodExpression
+      map
+    }
+  }
 
-              // Simple heuristic: method name is "getQuery"
-              if (methodExpr.referenceName == "getQuery") {
-                // Check if qualifier contains "queryUtils" (case-insensitive)
-                val qualifierText = methodExpr.qualifierExpression?.text?.lowercase()
-                if (qualifierText?.contains("queryutils") == true) {
-                  // Get first argument if it's a string literal
-                  val args = call.argumentList.expressions
-                  if (args.isNotEmpty() && args[0] is PsiLiteralExpression) {
-                    val literal = args[0] as PsiLiteralExpression
-                    val queryId = literal.value as? String
-                    if (!queryId.isNullOrBlank()) {
-                      map[queryId] = inputData.file.path
-                      log.debug("Indexed QueryUtils usage: $queryId -> ${inputData.file.path}")
-                    }
-                  }
+  private class OptimizedQueryUtilsVisitor(
+    private val resultMap: MutableMap<String, String>,
+    private val filePath: String,
+  ) : JavaRecursiveElementVisitor() {
+
+    private var foundCalls = 0
+    private val maxCallsPerFile = 100
+
+    override fun visitMethodCallExpression(call: PsiMethodCallExpression) {
+      try {
+        val methodExpr = call.methodExpression
+
+        // Quick name check
+        if (methodExpr.referenceName == "getQuery") {
+          // Quick qualifier check (text-based, no resolution)
+          val qualifierText = methodExpr.qualifierExpression?.text?.lowercase()
+          if (qualifierText?.contains("queryutils") == true) {
+
+            // Get first argument if it's a string literal
+            val args = call.argumentList.expressions
+            if (args.isNotEmpty() && args[0] is PsiLiteralExpression) {
+              val literal = args[0] as PsiLiteralExpression
+              val queryId = literal.value as? String
+              if (!queryId.isNullOrBlank()) {
+                resultMap[queryId] = filePath
+                foundCalls++
+
+                if (log.isDebugEnabled) {
+                  log.debug("Indexed QueryUtils usage: $queryId -> $filePath")
+                }
+
+                if (foundCalls >= maxCallsPerFile) {
+                  return
                 }
               }
             }
           }
-        )
+        }
+      } catch (e: ProcessCanceledException) {
+        throw e
+      } catch (e: ReadAction.CannotReadException) {
+        throw e
       } catch (e: Exception) {
-        log.error("Error indexing ${inputData.file.path}", e)
+        // Ignore individual call processing errors
       }
 
-      map
+      // Continue visiting if we haven't hit the limit
+      if (foundCalls < maxCallsPerFile) {
+        super.visitMethodCallExpression(call)
+      }
     }
   }
 }
