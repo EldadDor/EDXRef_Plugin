@@ -3,6 +3,7 @@ package com.github.edxref.query.ng.index
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.*
 import com.intellij.util.indexing.*
@@ -36,7 +37,7 @@ class NGSQLRefIndex : FileBasedIndexExtension<String, String>() {
           file.name.endsWith(".java") &&
           !file.path.contains("/test/") && // Skip test files for better performance
           !file.path.contains("/.gradle/") && // Skip gradle cache
-          !file.path.contains("/.m2/") // Skip maven cache
+          !(file.path.contains("/.m3/") || file.path.contains("/.m2/")) // Skip maven cache
       }
     }
   }
@@ -63,9 +64,14 @@ class NGSQLRefIndex : FileBasedIndexExtension<String, String>() {
       } catch (e: ReadAction.CannotReadException) {
         // Always rethrow ReadAction exceptions - never log them
         throw e
+      } catch (e: IndexNotReadyException) {
+        // Always rethrow IndexNotReadyException - it's also a control-flow exception
+        throw e
       } catch (e: Exception) {
-        // Only log non-control-flow exceptions
-        log.debug("Error indexing ${inputData.file.path}: ${e.message}")
+        // Only log non-control-flow exceptions and only in debug mode
+        if (log.isDebugEnabled) {
+          log.debug("Error indexing ${inputData.file.path}: ${e.message}")
+        }
       }
 
       map
@@ -130,44 +136,31 @@ class NGSQLRefIndex : FileBasedIndexExtension<String, String>() {
       } catch (e: ReadAction.CannotReadException) {
         throw e
       } catch (e: Exception) {
-        // Ignore individual annotation processing errors
-        if (log.isTraceEnabled) {
-          log.trace("Error processing annotation: ${e.message}")
+        // Only log non-control-flow exceptions - but be more specific
+        if (log.isDebugEnabled) {
+          log.debug("Error processing annotation: ${e.message}")
         }
       }
-
-      // Don't call super.visitAnnotation() to avoid unnecessary recursion
     }
+
+    /** Fast refId extraction without expensive PSI resolution */
 
     /** Fast refId extraction without expensive PSI resolution */
     private fun extractRefIdValueFast(annotation: PsiAnnotation): String? {
       try {
-        // Get the parameter list without triggering resolution
-        val parameterList = annotation.parameterList
-        val attributes = parameterList.attributes
-
-        for (attribute in attributes) {
-          val attrName = attribute.name
-
-          // Check for refId attribute or default value
-          if (attrName == "refId" || attrName == null) {
-            val value = attribute.value
-            if (value is PsiLiteralExpression) {
-              val literalValue = value.value
-              if (literalValue is String && literalValue.isNotBlank()) {
-                return literalValue
-              }
-            }
-          }
-        }
+        // Check for @SQLRef(value="refId") or @SQLRef("refId") patterns
+        val text = annotation.text
+        val regex =
+          """@\w*SQLRef\s*\(\s*(?:(?:ref[Ii]d\s*=\s*|value\s*=\s*)?["']([^"']+)["']|["']([^"']+)["'])\s*\)"""
+            .toRegex()
+        val match = regex.find(text)
+        return match?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
+          ?: match?.groupValues?.get(2)?.takeIf { it.isNotBlank() }
       } catch (e: ProcessCanceledException) {
         throw e
-      } catch (e: ReadAction.CannotReadException) {
-        throw e
       } catch (e: Exception) {
-        // Return null on any parsing error
+        // Silently ignore parsing errors for individual annotations
       }
-
       return null
     }
   }
